@@ -5,4 +5,7 @@ dist/
 build/
 .pytest_cache/
 output/
+presets/
 *.cube
+reference.mp4
+raw_footage.mp4
