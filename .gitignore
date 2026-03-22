@@ -9,3 +9,7 @@ presets/
 *.cube
 reference.mp4
 raw_footage.mp4
+uploads/
+jobs/
+node_modules/
+frontend/dist/
