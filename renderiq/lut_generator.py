@@ -84,6 +84,61 @@ def generate_lut(
     return lut
 
 
+def generate_lut_from_curves(
+    l_curve: np.ndarray,
+    a_curve: np.ndarray,
+    b_curve: np.ndarray,
+    size: int = 33,
+) -> np.ndarray:
+    """Generate a 3D LUT from explicit LAB channel curves.
+
+    Each curve is a 256-element array mapping input values (0-255) to
+    output values (0-255) for that LAB channel.
+
+    Args:
+        l_curve: L channel transfer curve (256 values).
+        a_curve: A channel transfer curve (256 values).
+        b_curve: B channel transfer curve (256 values).
+        size: LUT grid size per axis.
+
+    Returns:
+        3D LUT array of shape (size, size, size, 3), float32, [0.0, 1.0].
+    """
+    # Build interpolation functions
+    x = np.arange(256, dtype=np.float64)
+    l_fn = interp1d(x, l_curve, kind="linear", bounds_error=False,
+                    fill_value=(l_curve[0], l_curve[-1]))
+    a_fn = interp1d(x, a_curve, kind="linear", bounds_error=False,
+                    fill_value=(a_curve[0], a_curve[-1]))
+    b_fn = interp1d(x, b_curve, kind="linear", bounds_error=False,
+                    fill_value=(b_curve[0], b_curve[-1]))
+
+    lut = np.zeros((size, size, size, 3), dtype=np.float32)
+    grid = np.linspace(0, 1, size, dtype=np.float32)
+
+    for ri, r in enumerate(grid):
+        for gi, g in enumerate(grid):
+            for bi, b in enumerate(grid):
+                rgb_pixel = np.array([[[r, g, b]]], dtype=np.float32) * 255.0
+                bgr_pixel = rgb_pixel[:, :, ::-1].astype(np.uint8)
+                lab_pixel = cv2.cvtColor(bgr_pixel, cv2.COLOR_BGR2LAB)
+
+                l_val = float(lab_pixel[0, 0, 0])
+                a_val = float(lab_pixel[0, 0, 1])
+                b_val = float(lab_pixel[0, 0, 2])
+
+                l_out = np.clip(l_fn(l_val), 0, 255)
+                a_out = np.clip(a_fn(a_val), 0, 255)
+                b_out = np.clip(b_fn(b_val), 0, 255)
+
+                lab_out = np.array([[[l_out, a_out, b_out]]], dtype=np.uint8)
+                bgr_out = cv2.cvtColor(lab_out, cv2.COLOR_LAB2BGR)
+                rgb_out = bgr_out[0, 0, ::-1].astype(np.float32) / 255.0
+                lut[ri, gi, bi] = np.clip(rgb_out, 0.0, 1.0)
+
+    return lut
+
+
 def export_cube(
     lut: np.ndarray,
     output_path: str,

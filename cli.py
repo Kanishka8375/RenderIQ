@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import sys
 
 import cv2
@@ -10,6 +11,8 @@ import numpy as np
 from renderiq.pipeline import process
 from renderiq.lut_generator import load_cube
 from renderiq.grader import apply_lut_to_video, preview_grade
+from renderiq.comparison import create_comparison
+from renderiq.presets_builder import list_presets, get_preset_path, generate_all_presets
 from renderiq.utils import validate_video
 
 
@@ -36,22 +39,45 @@ def main() -> None:
     lut_parser.add_argument(
         "--preset", default=None, help="Save as named preset in presets/"
     )
+    lut_parser.add_argument(
+        "--multi-scene", action="store_true",
+        help="Generate per-scene LUTs via clustering",
+    )
 
     # --- grade command ---
     grade_parser = subparsers.add_parser(
-        "grade", help="Apply an existing .cube LUT to raw footage"
+        "grade", help="Apply an existing .cube LUT or built-in preset to raw footage"
     )
     grade_parser.add_argument(
         "--input", required=True, help="Raw footage video path"
     )
     grade_parser.add_argument(
-        "--lut", required=True, help="Path to .cube LUT file"
+        "--lut", default=None, help="Path to .cube LUT file"
+    )
+    grade_parser.add_argument(
+        "--preset", default=None, help="Built-in preset name (e.g. cinematic_warm)"
     )
     grade_parser.add_argument(
         "--output", required=True, help="Output graded video path"
     )
     grade_parser.add_argument(
         "--quality", type=int, default=18, help="CRF quality (default: 18)"
+    )
+    grade_parser.add_argument(
+        "--strength", type=float, default=1.0,
+        help="Grade strength 0.0-1.0 (default: 1.0)",
+    )
+    grade_parser.add_argument(
+        "--auto-wb", action="store_true",
+        help="Auto white balance before grading",
+    )
+    grade_parser.add_argument(
+        "--workers", type=int, default=None,
+        help="Number of parallel workers",
+    )
+    grade_parser.add_argument(
+        "--gpu", action="store_true",
+        help="Use GPU encoding if available",
     )
 
     # --- transfer command ---
@@ -70,6 +96,26 @@ def main() -> None:
     )
     transfer_parser.add_argument(
         "--preset", default=None, help="Also save LUT as named preset"
+    )
+    transfer_parser.add_argument(
+        "--multi-scene", action="store_true",
+        help="Use per-scene LUT clustering",
+    )
+    transfer_parser.add_argument(
+        "--strength", type=float, default=1.0,
+        help="Grade strength 0.0-1.0 (default: 1.0)",
+    )
+    transfer_parser.add_argument(
+        "--auto-wb", action="store_true",
+        help="Auto white balance before grading",
+    )
+    transfer_parser.add_argument(
+        "--workers", type=int, default=None,
+        help="Number of parallel workers",
+    )
+    transfer_parser.add_argument(
+        "--gpu", action="store_true",
+        help="Use GPU encoding if available",
     )
 
     # --- preview command ---
@@ -90,6 +136,26 @@ def main() -> None:
         "--output", default="output/preview.png",
         help="Output comparison image path",
     )
+    preview_parser.add_argument(
+        "--mode", choices=["side_by_side", "slider"], default="side_by_side",
+        help="Comparison mode (default: side_by_side)",
+    )
+    preview_parser.add_argument(
+        "--strength", type=float, default=1.0,
+        help="Grade strength 0.0-1.0 (default: 1.0)",
+    )
+
+    # --- presets command ---
+    presets_parser = subparsers.add_parser(
+        "presets", help="List or generate built-in presets"
+    )
+    presets_parser.add_argument(
+        "--list", action="store_true", help="List available presets"
+    )
+    presets_parser.add_argument(
+        "--generate", action="store_true",
+        help="Generate all built-in preset .cube files",
+    )
 
     args = parser.parse_args()
 
@@ -109,11 +175,15 @@ def main() -> None:
         _cmd_transfer(args)
     elif args.command == "preview":
         _cmd_preview(args)
+    elif args.command == "presets":
+        _cmd_presets(args)
 
 
 def _cmd_lut(args: argparse.Namespace) -> None:
-    if not validate_video(args.reference):
-        print(f"Error: Invalid video file: {args.reference}", file=sys.stderr)
+    validation = validate_video(args.reference)
+    if validation is not True:
+        error = validation.get("error", "Invalid video") if isinstance(validation, dict) else "Invalid video"
+        print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
     output_dir = "output/"
@@ -125,6 +195,7 @@ def _cmd_lut(args: argparse.Namespace) -> None:
         lut_only=True,
         output_dir=output_dir,
         preset_name=args.preset,
+        multi_scene=args.multi_scene,
     )
 
     if args.output and result["lut_path"] != args.output:
@@ -133,25 +204,54 @@ def _cmd_lut(args: argparse.Namespace) -> None:
         result["lut_path"] = args.output
 
     print(f"LUT saved to: {result['lut_path']}")
+    if result.get("multi_scene_paths"):
+        for p in result["multi_scene_paths"]:
+            print(f"  Scene LUT: {p}")
     print(f"Processing time: {result['processing_time']:.1f}s")
 
 
 def _cmd_grade(args: argparse.Namespace) -> None:
-    if not validate_video(args.input):
-        print(f"Error: Invalid video file: {args.input}", file=sys.stderr)
+    validation = validate_video(args.input)
+    if validation is not True:
+        error = validation.get("error", "Invalid video") if isinstance(validation, dict) else "Invalid video"
+        print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
-    lut = load_cube(args.lut)
-    output = apply_lut_to_video(args.input, lut, args.output, quality=args.quality)
+    if not args.lut and not args.preset:
+        print("Error: Must specify --lut or --preset", file=sys.stderr)
+        sys.exit(1)
+
+    if args.preset:
+        try:
+            lut_path = get_preset_path(args.preset)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        lut = load_cube(lut_path)
+    else:
+        lut = load_cube(args.lut)
+
+    output = apply_lut_to_video(
+        args.input, lut, args.output,
+        quality=args.quality,
+        strength=args.strength,
+        auto_wb=args.auto_wb,
+        workers=args.workers,
+        use_gpu=args.gpu,
+    )
     print(f"Graded video saved to: {output}")
 
 
 def _cmd_transfer(args: argparse.Namespace) -> None:
-    if not validate_video(args.reference):
-        print(f"Error: Invalid reference video: {args.reference}", file=sys.stderr)
+    validation = validate_video(args.reference)
+    if validation is not True:
+        error = validation.get("error", "Invalid video") if isinstance(validation, dict) else "Invalid video"
+        print(f"Error: Invalid reference video: {error}", file=sys.stderr)
         sys.exit(1)
-    if not validate_video(args.input):
-        print(f"Error: Invalid input video: {args.input}", file=sys.stderr)
+    validation = validate_video(args.input)
+    if validation is not True:
+        error = validation.get("error", "Invalid video") if isinstance(validation, dict) else "Invalid video"
+        print(f"Error: Invalid input video: {error}", file=sys.stderr)
         sys.exit(1)
 
     output_dir = "output/"
@@ -163,6 +263,11 @@ def _cmd_transfer(args: argparse.Namespace) -> None:
         raw_footage_path=args.input,
         output_dir=output_dir,
         preset_name=args.preset,
+        multi_scene=args.multi_scene,
+        strength=args.strength,
+        auto_wb=args.auto_wb,
+        workers=args.workers,
+        use_gpu=args.gpu,
     )
 
     if args.output and result["graded_video_path"] != args.output:
@@ -176,11 +281,15 @@ def _cmd_transfer(args: argparse.Namespace) -> None:
 
 
 def _cmd_preview(args: argparse.Namespace) -> None:
-    if not validate_video(args.reference):
-        print(f"Error: Invalid reference video: {args.reference}", file=sys.stderr)
+    validation = validate_video(args.reference)
+    if validation is not True:
+        error = validation.get("error", "Invalid video") if isinstance(validation, dict) else "Invalid video"
+        print(f"Error: Invalid reference video: {error}", file=sys.stderr)
         sys.exit(1)
-    if not validate_video(args.input):
-        print(f"Error: Invalid input video: {args.input}", file=sys.stderr)
+    validation = validate_video(args.input)
+    if validation is not True:
+        error = validation.get("error", "Invalid video") if isinstance(validation, dict) else "Invalid video"
+        print(f"Error: Invalid input video: {error}", file=sys.stderr)
         sys.exit(1)
 
     # Generate LUT first
@@ -191,16 +300,38 @@ def _cmd_preview(args: argparse.Namespace) -> None:
     )
 
     lut = load_cube(result["lut_path"])
-    original, graded = preview_grade(args.input, lut, timestamp=args.timestamp)
+    original, graded = preview_grade(
+        args.input, lut, timestamp=args.timestamp, strength=args.strength
+    )
 
-    # Create side-by-side comparison
-    import os
+    # Create comparison image
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    comparison = create_comparison(original, graded, mode=args.mode)
 
-    comparison = np.hstack([original, graded])
     # RGB to BGR for OpenCV save
     cv2.imwrite(args.output, cv2.cvtColor(comparison, cv2.COLOR_RGB2BGR))
     print(f"Preview saved to: {args.output}")
+
+
+def _cmd_presets(args: argparse.Namespace) -> None:
+    if args.generate:
+        print("Generating all built-in presets...")
+        paths = generate_all_presets()
+        for p in paths:
+            print(f"  Generated: {p}")
+        print(f"Done. {len(paths)} presets generated.")
+        return
+
+    # Default: list presets
+    presets = list_presets()
+    print(f"\nRenderIQ Built-in Presets ({len(presets)} available):")
+    print("-" * 50)
+    for p in presets:
+        status = "ready" if p["exists"] else "not generated"
+        print(f"  {p['name']:25s} {p['title']:25s} [{status}]")
+    print()
+    print("Usage: python cli.py grade --input video.mp4 --preset <name> --output out.mp4")
+    print("Generate all: python cli.py presets --generate")
 
 
 if __name__ == "__main__":

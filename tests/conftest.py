@@ -166,3 +166,25 @@ def identity_lut():
             for bi, b in enumerate(grid):
                 lut[ri, gi, bi] = [r, g, b]
     return lut
+
+
+def make_video_ffmpeg(path, width=320, height=240, fps=30, duration=3,
+                      color="808080", has_audio=True, codec="libx264"):
+    """Create a test video using FFmpeg with precise control."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i",
+        f"color=c=#{color}:s={width}x{height}:d={duration}:r={fps}",
+    ]
+    if has_audio:
+        cmd += [
+            "-f", "lavfi", "-i",
+            f"sine=frequency=440:duration={duration}",
+            "-c:a", "aac", "-b:a", "128k",
+        ]
+    cmd += [
+        "-c:v", codec, "-pix_fmt", "yuv420p",
+        str(path),
+    ]
+    subprocess.run(cmd, capture_output=True, check=True)
+    return str(path)

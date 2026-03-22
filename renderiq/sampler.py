@@ -41,6 +41,10 @@ def extract_keyframes(
     if duration <= 0:
         raise ValueError(f"Video has invalid duration: {duration}")
 
+    # 1.4: Short video handling — use 1fps for videos under 5 seconds
+    if duration < 5.0:
+        interval_seconds = 1.0
+
     # Collect timestamps from both strategies
     uniform_ts = _uniform_timestamps(duration, interval_seconds)
     scene_ts = _scene_change_timestamps(video_path, scene_threshold)
@@ -53,6 +57,16 @@ def extract_keyframes(
     # Merge and deduplicate (within 0.5s proximity)
     merged = _merge_timestamps(uniform_ts, scene_ts, min_gap=0.5)
 
+    # 1.4: Ensure at least 3 keyframes for very short videos
+    if len(merged) < 3 and duration > 0:
+        extra_ts = np.linspace(0, max(duration - 0.01, 0), 3)
+        for t in extra_ts:
+            merged.append((float(t), "uniform"))
+        merged = _merge_timestamps(merged, [], min_gap=0.1)
+        if len(merged) < 3:
+            # force at least 3 even if they overlap
+            merged = [(float(t), "uniform") for t in extra_ts]
+
     # Cap total frames
     if len(merged) > max_frames:
         step = len(merged) / max_frames
@@ -60,6 +74,25 @@ def extract_keyframes(
 
     # Extract actual frames
     frames = _extract_frames_at_timestamps(video_path, merged)
+
+    # 1.4: Ensure minimum 3 frames returned
+    if len(frames) < 3 and duration > 0:
+        # Try extracting at different positions
+        fallback_ts = [(0.0, "uniform")]
+        if duration > 0.1:
+            fallback_ts.append((duration / 2, "uniform"))
+        if duration > 0.2:
+            fallback_ts.append((max(duration - 0.1, 0), "uniform"))
+        extra_frames = _extract_frames_at_timestamps(video_path, fallback_ts)
+        seen_ts = {f["timestamp"] for f in frames}
+        for ef in extra_frames:
+            if ef["timestamp"] not in seen_ts and len(frames) < 3:
+                frames.append(ef)
+                seen_ts.add(ef["timestamp"])
+        # If still not enough, duplicate the first frame
+        while len(frames) < 3 and frames:
+            frames.append(dict(frames[0]))
+
     logger.info("Extracted %d keyframes", len(frames))
     return frames
 
