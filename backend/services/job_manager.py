@@ -1,15 +1,24 @@
-"""Background job queue and status tracking."""
+"""Background job queue and status tracking with file-backed persistence.
 
+Each job is stored as a JSON file under JOBS_DIR/{job_id}.json so that
+job state survives container restarts and is visible to all workers.
+"""
+
+import json
 import logging
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 from backend.config import config
 from backend.services.storage import cleanup_job
 
 logger = logging.getLogger(__name__)
+
+# Fields that hold transient runtime state and should not block persistence
+_SERIALIZABLE_TYPES = (str, int, float, bool, type(None))
 
 
 @dataclass
@@ -36,22 +45,89 @@ class JobInfo:
     created_at: float = field(default_factory=time.time)
 
 
+def _job_path(job_id: str) -> str:
+    """Return the filesystem path for a job's JSON state file."""
+    return os.path.join(config.JOBS_DIR, f"{job_id}.json")
+
+
+def _save_job(job: JobInfo) -> None:
+    """Persist a job's state to disk."""
+    path = _job_path(job.job_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(asdict(job), f)
+        os.replace(tmp, path)
+    except Exception:
+        logger.exception("Failed to persist job %s", job.job_id)
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def _load_job(job_id: str) -> JobInfo | None:
+    """Load a job's state from disk."""
+    path = _job_path(job_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        # Only pass fields that exist on JobInfo
+        valid_fields = {fld.name for fld in fields(JobInfo)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return JobInfo(**filtered)
+    except Exception:
+        logger.exception("Failed to load job %s from disk", job_id)
+        return None
+
+
 class JobManager:
     def __init__(self):
         self._jobs: dict[str, JobInfo] = {}
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=config.MAX_CONCURRENT_JOBS)
         self._active_count = 0
+        self._load_existing_jobs()
+
+    def _load_existing_jobs(self):
+        """Load any persisted jobs from disk on startup."""
+        jobs_dir = config.JOBS_DIR
+        if not os.path.isdir(jobs_dir):
+            return
+        for fname in os.listdir(jobs_dir):
+            if not fname.endswith(".json"):
+                continue
+            job_id = fname[:-5]
+            job = _load_job(job_id)
+            if job:
+                # Mark any previously-processing jobs as failed (unclean shutdown)
+                if job.status in ("processing", "queued"):
+                    job.status = "failed"
+                    job.error = "Server restarted during processing"
+                    job.end_time = time.time()
+                    _save_job(job)
+                self._jobs[job_id] = job
+        logger.info("Loaded %d persisted jobs from disk", len(self._jobs))
 
     def create_job(self, job_id: str) -> JobInfo:
         with self._lock:
             job = JobInfo(job_id=job_id)
             self._jobs[job_id] = job
+            _save_job(job)
             return job
 
     def get_job(self, job_id: str) -> JobInfo | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            job = self._jobs.get(job_id)
+            if job:
+                return job
+        # Fallback: try loading from disk (e.g. created by another worker)
+        job = _load_job(job_id)
+        if job:
+            with self._lock:
+                self._jobs[job_id] = job
+        return job
 
     def update_job(self, job_id: str, **kwargs):
         with self._lock:
@@ -59,6 +135,7 @@ class JobManager:
             if job:
                 for k, v in kwargs.items():
                     setattr(job, k, v)
+                _save_job(job)
 
     def submit_grade_task(self, job_id: str, task_fn, *args, **kwargs):
         """Submit a grading task to the thread pool."""
@@ -67,8 +144,8 @@ class JobManager:
                 job = self._jobs.get(job_id)
                 if job:
                     job.status = "queued"
+                    _save_job(job)
                     queue_pos = self._active_count - config.MAX_CONCURRENT_JOBS + 1
-                    # Submit anyway — ThreadPoolExecutor will queue it
                     self._executor.submit(self._run_task, job_id, task_fn, *args, **kwargs)
                     return "queued", queue_pos
             self._active_count += 1
@@ -82,7 +159,7 @@ class JobManager:
             if job:
                 job.status = "processing"
                 job.start_time = time.time()
-                # Ensure count is correct if was queued
+                _save_job(job)
                 if self._active_count < config.MAX_CONCURRENT_JOBS:
                     self._active_count += 1
         try:
@@ -101,41 +178,49 @@ class JobManager:
         """Get job status as a dict for API response."""
         with self._lock:
             job = self._jobs.get(job_id)
-            if not job:
-                return None
 
-            elapsed = 0
-            estimated = None
-            if job.start_time > 0:
-                elapsed = time.time() - job.start_time
-                if job.progress > 0 and job.status == "processing":
-                    rate = elapsed / job.progress
-                    estimated = rate * (100 - job.progress)
+        # Fallback: try disk
+        if not job:
+            job = _load_job(job_id)
+            if job:
+                with self._lock:
+                    self._jobs[job_id] = job
 
-            result = None
-            if job.status == "completed":
-                result = {
-                    "graded_video_url": f"/api/download/{job_id}/video" if job.graded_video_path else None,
-                    "lut_url": f"/api/download/{job_id}/lut" if job.lut_path else None,
-                    "preview_url": f"/api/download/{job_id}/preview" if job.preview_path else None,
-                    "comparison_url": f"/api/download/{job_id}/comparison" if job.comparison_path else None,
-                }
+        if not job:
+            return None
 
-            resp = {
-                "job_id": job_id,
-                "status": job.status,
-                "progress": job.progress,
-                "current_step": job.current_step,
-                "elapsed_seconds": round(elapsed, 1),
-                "estimated_remaining": round(estimated, 1) if estimated else None,
-                "result": result,
+        elapsed = 0
+        estimated = None
+        if job.start_time > 0:
+            elapsed = time.time() - job.start_time
+            if job.progress > 0 and job.status == "processing":
+                rate = elapsed / job.progress
+                estimated = rate * (100 - job.progress)
+
+        result = None
+        if job.status == "completed":
+            result = {
+                "graded_video_url": f"/api/download/{job_id}/video" if job.graded_video_path else None,
+                "lut_url": f"/api/download/{job_id}/lut" if job.lut_path else None,
+                "preview_url": f"/api/download/{job_id}/preview" if job.preview_path else None,
+                "comparison_url": f"/api/download/{job_id}/comparison" if job.comparison_path else None,
             }
-            if job.status == "queued":
-                resp["queue_position"] = 1
-            if job.status == "failed":
-                resp["current_step"] = job.error
 
-            return resp
+        resp = {
+            "job_id": job_id,
+            "status": job.status,
+            "progress": job.progress,
+            "current_step": job.current_step,
+            "elapsed_seconds": round(elapsed, 1),
+            "estimated_remaining": round(estimated, 1) if estimated else None,
+            "result": result,
+        }
+        if job.status == "queued":
+            resp["queue_position"] = 1
+        if job.status == "failed":
+            resp["current_step"] = job.error
+
+        return resp
 
     def cleanup_expired(self):
         """Remove jobs older than expiry time."""
@@ -151,6 +236,10 @@ class JobManager:
             cleanup_job(job_id)
             with self._lock:
                 self._jobs.pop(job_id, None)
+            # Remove persisted state file
+            path = _job_path(job_id)
+            if os.path.exists(path):
+                os.remove(path)
             logger.info("Cleaned up expired job: %s", job_id)
 
     @property

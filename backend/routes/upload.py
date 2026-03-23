@@ -79,13 +79,16 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
 
     # Create job
     job = job_manager.create_job(job_id)
-    job.raw_path = file_path
-    job.raw_filename = file.filename or f"video{ext}"
-    job.duration = info["duration"]
-    job.width = info["width"]
-    job.height = info["height"]
-    job.fps = info["fps"]
-    job.file_size = total_size
+    job_manager.update_job(
+        job_id,
+        raw_path=file_path,
+        raw_filename=file.filename or f"video{ext}",
+        duration=info["duration"],
+        width=info["width"],
+        height=info["height"],
+        fps=info["fps"],
+        file_size=total_size,
+    )
 
     return UploadResponse(
         job_id=job_id,
