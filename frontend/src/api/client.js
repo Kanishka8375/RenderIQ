@@ -65,7 +65,7 @@ export const api = {
     }),
 
   getPresetPreview: (name) =>
-    `${API_BASE}/api/presets/${name}/preview`,
+    `${API_BASE}/api/presets/${encodeURIComponent(name)}/preview`,
 
   startGrade: (config) =>
     fetch(`${API_BASE}/api/grade/start`, {
@@ -78,13 +78,13 @@ export const api = {
     }),
 
   getStatus: (jobId) =>
-    fetch(`${API_BASE}/api/grade/status/${jobId}`).then((r) => {
+    fetch(`${API_BASE}/api/grade/status/${encodeURIComponent(jobId)}`).then((r) => {
       if (!r.ok) throw new Error('Status check failed');
       return r.json();
     }),
 
   getDownloadUrl: (jobId, type) =>
-    `${API_BASE}/api/download/${jobId}/${type}`,
+    `${API_BASE}/api/download/${encodeURIComponent(jobId)}/${encodeURIComponent(type)}`,
 
   submitFeedback: (jobId, rating, comment = '') =>
     fetch(`${API_BASE}/api/admin/feedback`, {

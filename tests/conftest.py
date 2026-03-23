@@ -9,6 +9,12 @@ import numpy as np
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def disable_rate_limit(monkeypatch):
+    """Disable rate limiting for all tests."""
+    monkeypatch.setenv("TESTING", "1")
+
+
 @pytest.fixture
 def sample_video(tmp_path):
     """Create a short synthetic test video (3 seconds, 30fps, 320x240)."""

@@ -1,8 +1,24 @@
 """Application configuration."""
 
 import os
+import re
+import sys
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _is_testing() -> bool:
+    """Check if running under pytest or TESTING env var."""
+    return "pytest" in sys.modules or os.getenv("TESTING") == "1"
+
+
+def _get_rate_limit() -> str:
+    """Return appropriate rate limit for the current environment."""
+    if _is_testing():
+        return "1000/second"  # Effectively unlimited in tests
+    if os.getenv("RENDERIQ_ENV") == "production":
+        return "5/hour"
+    return "100/hour"  # Development
 
 
 class Config:
@@ -18,10 +34,13 @@ class Config:
     ALLOWED_VIDEO_FORMATS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
     CLEANUP_INTERVAL_SECONDS = 300  # Check for expired jobs every 5 minutes
 
+    # Job ID validation pattern (hex, 12 chars)
+    JOB_ID_PATTERN = re.compile(r"^[a-f0-9]{12}$")
+
     # Production settings
     ENV = os.environ.get("RENDERIQ_ENV", "development")
     DEBUG = ENV != "production"
-    ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY", "renderiq-dev-key")
+    ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY", "renderiq-dev-key" if ENV != "production" else "")
     ALLOWED_ORIGINS = (
         ["*"] if ENV != "production"
         else [
@@ -29,7 +48,7 @@ class Config:
             "https://www.renderiq.in",
         ]
     )
-    RATE_LIMIT_UPLOADS = "5/hour" if ENV == "production" else "1000/hour"
+    RATE_LIMIT_UPLOADS = _get_rate_limit()
     FEEDBACK_FILE = os.path.join(ROOT_DIR, "feedback.json")
     ANALYTICS_FILE = os.path.join(ROOT_DIR, "analytics.json")
 

@@ -1,7 +1,7 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -15,11 +15,16 @@ COPY backend/ backend/
 COPY presets/ presets/
 COPY cli.py .
 
-# Create working directories
-RUN mkdir -p uploads jobs output
+# Create non-root user and working directories
+RUN useradd -m appuser && \
+    mkdir -p uploads jobs output && \
+    chown -R appuser:appuser /app
 
 # Generate built-in presets
 RUN python -c "from renderiq.presets_builder import generate_all_presets; generate_all_presets()"
+RUN chown -R appuser:appuser /app/presets
+
+USER appuser
 
 EXPOSE 8000
 

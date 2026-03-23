@@ -55,7 +55,6 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
             total_size += len(chunk)
             size_err = validate_upload_size(total_size)
             if size_err:
-                f.close()
                 os.remove(file_path)
                 raise HTTPException(status_code=413, detail=size_err)
             f.write(chunk)
@@ -104,6 +103,15 @@ async def upload_reference(
     file: UploadFile = File(...),
 ):
     """Upload reference video for a job."""
+    # Validate job_id format
+    if not config.JOB_ID_PATTERN.match(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+
+    # Check disk space
+    disk_err = validate_disk_space()
+    if disk_err:
+        raise HTTPException(status_code=507, detail=disk_err)
+
     # Validate job exists
     job = job_manager.get_job(job_id)
     if not job:
@@ -130,7 +138,6 @@ async def upload_reference(
             total_size += len(chunk)
             size_err = validate_upload_size(total_size)
             if size_err:
-                f.close()
                 os.remove(file_path)
                 raise HTTPException(status_code=413, detail=size_err)
             f.write(chunk)

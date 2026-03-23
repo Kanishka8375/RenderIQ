@@ -13,6 +13,9 @@ services:
       - MAX_CONCURRENT_JOBS=3
       - JOB_EXPIRY_SECONDS=3600
       - RENDERIQ_ENV=production
+      - RENDERIQ_ADMIN_KEY=${RENDERIQ_ADMIN_KEY:-changeme-in-production}
+    networks:
+      - internal
     restart: unless-stopped
 
   frontend:
@@ -23,7 +26,12 @@ services:
       - "80:80"
     depends_on:
       - backend
+    networks:
+      - internal
     restart: unless-stopped
+
+networks:
+  internal:
 
 volumes:
   uploads:

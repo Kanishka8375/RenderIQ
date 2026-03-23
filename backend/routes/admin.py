@@ -1,8 +1,10 @@
 """Admin endpoints for analytics and feedback."""
 
 import json
+import logging
 import os
 import time
+from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
@@ -10,10 +12,14 @@ from pydantic import BaseModel
 from backend.config import config
 from backend.services.job_manager import job_manager
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 def _verify_key(api_key: str | None):
+    if not config.ADMIN_API_KEY:
+        raise HTTPException(status_code=503, detail="Admin API key not configured")
     if api_key != config.ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="Invalid API key")
 
@@ -22,14 +28,20 @@ def _verify_key(api_key: str | None):
 
 def _load_analytics() -> list[dict]:
     if os.path.isfile(config.ANALYTICS_FILE):
-        with open(config.ANALYTICS_FILE) as f:
-            return json.load(f)
+        try:
+            with open(config.ANALYTICS_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load analytics: %s", e)
     return []
 
 
 def _save_analytics(entries: list[dict]):
-    with open(config.ANALYTICS_FILE, "w") as f:
-        json.dump(entries, f, indent=2)
+    try:
+        with open(config.ANALYTICS_FILE, "w") as f:
+            json.dump(entries, f, indent=2)
+    except OSError as e:
+        logger.warning("Failed to save analytics: %s", e)
 
 
 def log_job_analytics(
@@ -96,22 +108,34 @@ async def get_stats(x_api_key: str | None = Header(None)):
 
 # --- Feedback ---
 
+class RatingEnum(str, Enum):
+    GREAT = "great"
+    OK = "ok"
+    BAD = "bad"
+
+
 class FeedbackRequest(BaseModel):
     job_id: str
-    rating: str  # "great", "ok", "bad"
+    rating: RatingEnum
     comment: str = ""
 
 
 def _load_feedback() -> list[dict]:
     if os.path.isfile(config.FEEDBACK_FILE):
-        with open(config.FEEDBACK_FILE) as f:
-            return json.load(f)
+        try:
+            with open(config.FEEDBACK_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load feedback: %s", e)
     return []
 
 
 def _save_feedback(entries: list[dict]):
-    with open(config.FEEDBACK_FILE, "w") as f:
-        json.dump(entries, f, indent=2)
+    try:
+        with open(config.FEEDBACK_FILE, "w") as f:
+            json.dump(entries, f, indent=2)
+    except OSError as e:
+        logger.warning("Failed to save feedback: %s", e)
 
 
 @router.post("/feedback")
