@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Upload, Check, Info, Wand2 } from 'lucide-react';
+import { Upload, Check, Info, Wand2, Brain, Music, Eye, User, Tag } from 'lucide-react';
 import { api } from '../api/client';
 import StrengthSlider from './StrengthSlider';
 
 export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }) {
-  const [tab, setTab] = useState('presets');
+  const [tab, setTab] = useState('smart');
   const [presets, setPresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,6 +18,7 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
   const [recommending, setRecommending] = useState(false);
   const [recommendations, setRecommendations] = useState(null);
   const [recommendError, setRecommendError] = useState(null);
+  const [smartStarted, setSmartStarted] = useState(false);
 
   useEffect(() => {
     api.getPresets()
@@ -60,11 +61,22 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
   };
 
   const canGrade =
+    tab === 'smart' ||
     (tab === 'presets' && selectedPreset) ||
     (tab === 'reference' && refUploaded);
 
   const handleGrade = () => {
     if (!canGrade) return;
+    if (tab === 'smart') {
+      setSmartStarted(true);
+      onStartGrade({
+        job_id: jobId,
+        mode: 'smart',
+        strength: strength / 100,
+        output_format: 'both',
+      });
+      return;
+    }
     onStartGrade({
       job_id: jobId,
       mode: tab === 'presets' ? 'preset' : 'reference',
@@ -80,20 +92,78 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
     <div className="space-y-6">
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-[var(--color-surface)] rounded-xl">
-        {['presets', 'reference'].map((t) => (
+        {[
+          { key: 'smart', label: 'Smart Grade', icon: Brain },
+          { key: 'presets', label: 'Presets', icon: Wand2 },
+          { key: 'reference', label: 'Reference', icon: Upload },
+        ].map(({ key, label, icon: Icon }) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
-              tab === t
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+              tab === key
                 ? 'bg-[var(--color-primary)] text-white'
                 : 'text-[var(--color-text-secondary)] hover:text-white'
             }`}
           >
-            {t === 'presets' ? 'Presets' : 'Custom Reference'}
+            <Icon size={14} />
+            {label}
           </button>
         ))}
       </div>
+
+      {/* Smart Grade */}
+      {tab === 'smart' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[var(--color-primary)]/20 bg-gradient-to-br from-[var(--color-primary)]/5 to-[var(--color-secondary)]/5 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/15 flex items-center justify-center">
+                <Brain size={24} className="text-[var(--color-primary)]" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">Smart Auto Grade</h3>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  AI analyzes your video's audio mood + visual content to pick the perfect color grade
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Music size={14} className="text-[var(--color-secondary)]" />
+                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">Audio</span>
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Tempo, energy, mood detection
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Eye size={14} className="text-[var(--color-secondary)]" />
+                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">Visual</span>
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Scene, lighting, motion analysis
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <User size={14} className="text-[var(--color-secondary)]" />
+                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">Faces</span>
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Skin-tone safe grading
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[var(--color-text-secondary)] text-center">
+              No configuration needed — just click Grade and let the AI do the work
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Presets Grid */}
       {tab === 'presets' && (
@@ -344,7 +414,7 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
             : 'bg-white/5 text-white/30 cursor-not-allowed'}
         `}
       >
-        Grade My Video
+        {tab === 'smart' ? 'Smart Grade My Video' : 'Grade My Video'}
       </button>
     </div>
   );

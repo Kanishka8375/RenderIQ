@@ -1,5 +1,6 @@
 """Grading job endpoints."""
 
+import json
 import logging
 import os
 import sys
@@ -178,6 +179,106 @@ def _run_grade_job(job_id: str, request: GradeRequest):
             pass
 
 
+def _run_smart_grade_job(job_id: str, request: GradeRequest):
+    """Execute smart grading (audio+visual mood analysis) in background thread."""
+    from renderiq.smart_grade import smart_grade
+    from renderiq.grader import preview_grade
+    from renderiq.comparison import create_comparison
+    from renderiq.lut_generator import export_cube, load_cube
+    import cv2
+
+    job = job_manager.get_job(job_id)
+    if not job:
+        return
+
+    work_dir = get_job_work_dir(job_id)
+
+    try:
+        graded_video_path = os.path.join(work_dir, "graded.mp4")
+
+        def progress_cb(step_name, pct):
+            job_manager.update_job(job_id, current_step=step_name, progress=pct)
+
+        result = smart_grade(
+            video_path=job.raw_path,
+            output_path=graded_video_path,
+            strength_override=request.strength if request.strength != 0.8 else None,
+            progress_callback=progress_cb,
+        )
+
+        # Store smart grade analysis info
+        smart_info = {
+            "mood": result["mood_profile"]["mood"],
+            "audio_mood": result["audio_analysis"]["mood"],
+            "visual_scene": result["visual_analysis"]["scene_type"],
+            "has_faces": result["visual_analysis"]["has_faces"],
+            "preset_applied": result["grade_applied"]["preset"],
+            "strength_applied": result["grade_applied"]["strength"],
+            "description": result["grade_applied"]["description"],
+            "confidence": result["mood_profile"]["confidence"],
+            "mood_tags": result["mood_profile"].get("mood_tags", []),
+            "processing_time": result["processing_time"],
+        }
+        job_manager.update_job(job_id, smart_grade_info=json.dumps(smart_info))
+
+        # Generate preview and comparison from the applied preset
+        job_manager.update_job(job_id, current_step="Generating preview...", progress=90)
+        from renderiq.presets_builder import get_preset_path
+        preset_name = result["grade_applied"]["preset"]
+        preset_path = get_preset_path(preset_name)
+        lut = load_cube(preset_path)
+
+        original, graded = preview_grade(
+            job.raw_path, lut, strength=result["grade_applied"]["strength"],
+        )
+
+        preview_path = os.path.join(work_dir, "preview.png")
+        cv2.imwrite(preview_path, cv2.cvtColor(graded, cv2.COLOR_RGB2BGR))
+
+        comparison_path = os.path.join(work_dir, "comparison.png")
+        comp = create_comparison(original, graded, mode="side_by_side")
+        cv2.imwrite(comparison_path, cv2.cvtColor(comp, cv2.COLOR_RGB2BGR))
+
+        # Export LUT
+        lut_path = os.path.join(work_dir, "grade.cube")
+        export_cube(lut, lut_path)
+
+        end_time = time.time()
+        job_manager.update_job(
+            job_id,
+            status="completed",
+            progress=100,
+            current_step="Complete",
+            end_time=end_time,
+            graded_video_path=graded_video_path,
+            lut_path=lut_path,
+            preview_path=preview_path,
+            comparison_path=comparison_path,
+        )
+
+        try:
+            from backend.routes.admin import log_job_analytics
+            log_job_analytics(
+                job_id=job_id,
+                preset=result["grade_applied"]["preset"],
+                mode="smart",
+                duration=job.duration,
+                resolution=f"{job.width}x{job.height}",
+                processing_time=end_time - job.start_time,
+                success=True,
+            )
+        except Exception:
+            logger.warning("Failed to log analytics for job %s", job_id)
+
+    except Exception as e:
+        logger.exception("Smart grading failed for job %s", job_id)
+        end_time = time.time()
+        job_manager.update_job(
+            job_id, status="failed", error=str(e),
+            current_step=f"Error: {e}", end_time=end_time,
+        )
+
+
 @router.post("/start", response_model=GradeStartResponse)
 async def start_grade(request: GradeRequest):
     """Start a grading job in the background."""
@@ -195,9 +296,12 @@ async def start_grade(request: GradeRequest):
     if request.mode == "preset" and not request.preset_name:
         raise HTTPException(status_code=400, detail="Preset name required for preset mode")
 
+    # Choose task function based on mode
+    task_fn = _run_smart_grade_job if request.mode == "smart" else _run_grade_job
+
     # Submit to job queue
     status, queue_pos = job_manager.submit_grade_task(
-        request.job_id, _run_grade_job, request
+        request.job_id, task_fn, request
     )
 
     message = "Grading started"
