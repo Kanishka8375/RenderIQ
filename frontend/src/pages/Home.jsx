@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Upload, Palette, Sparkles, Check, ArrowLeft } from 'lucide-react';
+import { Upload, Palette, Sparkles, Check, ArrowLeft, Brain, Music, Eye, User, Tag } from 'lucide-react';
 import Hero from '../components/landing/Hero';
 import HowItWorks from '../components/landing/HowItWorks';
 import PresetShowcase from '../components/landing/PresetShowcase';
@@ -222,6 +222,60 @@ export default function Home() {
                           Compare the before and after, then download your graded video
                         </p>
                         <div className="space-y-6">
+                          {/* Smart Grade Analysis Card */}
+                          {job.smartGradeInfo && (
+                            <div className="rounded-xl border border-[var(--color-primary)]/20 bg-gradient-to-br from-[var(--color-primary)]/5 to-[var(--color-secondary)]/5 p-5 space-y-4">
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                <Brain size={16} className="text-[var(--color-primary)]" />
+                                Smart Grade Analysis
+                              </div>
+                              <p className="text-sm text-[var(--color-text-secondary)]">
+                                {job.smartGradeInfo.description}
+                              </p>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="p-2.5 rounded-lg bg-[var(--color-surface)] border border-white/5">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <Music size={12} className="text-[var(--color-secondary)]" />
+                                    <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)]">Audio Mood</span>
+                                  </div>
+                                  <p className="text-sm font-medium capitalize">{job.smartGradeInfo.audio_mood}</p>
+                                </div>
+                                <div className="p-2.5 rounded-lg bg-[var(--color-surface)] border border-white/5">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <Eye size={12} className="text-[var(--color-secondary)]" />
+                                    <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)]">Scene</span>
+                                  </div>
+                                  <p className="text-sm font-medium capitalize">{job.smartGradeInfo.visual_scene?.replace(/_/g, ' ')}</p>
+                                </div>
+                                <div className="p-2.5 rounded-lg bg-[var(--color-surface)] border border-white/5">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <Palette size={12} className="text-[var(--color-secondary)]" />
+                                    <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)]">Preset</span>
+                                  </div>
+                                  <p className="text-sm font-medium capitalize">{job.smartGradeInfo.preset_applied?.replace(/_/g, ' ')}</p>
+                                </div>
+                                <div className="p-2.5 rounded-lg bg-[var(--color-surface)] border border-white/5">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <User size={12} className="text-[var(--color-secondary)]" />
+                                    <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)]">Faces</span>
+                                  </div>
+                                  <p className="text-sm font-medium">{job.smartGradeInfo.has_faces ? 'Detected' : 'None'}</p>
+                                </div>
+                              </div>
+                              {job.smartGradeInfo.mood_tags?.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {job.smartGradeInfo.mood_tags.slice(0, 8).map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="px-2 py-0.5 rounded-full text-[10px] bg-white/5 text-[var(--color-text-secondary)] border border-white/5"
+                                    >
+                                      {tag.replace(/_/g, ' ')}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           <PreviewCompare comparisonUrl={job.result?.comparison_url} />
                           <DownloadPanel
                             jobId={jobId}

@@ -47,6 +47,7 @@ export function useJob(jobId) {
     elapsedSeconds: status?.elapsed_seconds || 0,
     estimatedRemaining: status?.estimated_remaining,
     queuePosition: status?.queue_position,
+    smartGradeInfo: status?.smart_grade_info || null,
     error,
     startPolling,
     stopPolling,

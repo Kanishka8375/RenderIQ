@@ -37,6 +37,7 @@ class JobInfo:
     lut_path: str = ""
     preview_path: str = ""
     comparison_path: str = ""
+    smart_grade_info: str = ""  # JSON-encoded smart grade analysis
     duration: float = 0
     width: int = 0
     height: int = 0
@@ -219,6 +220,13 @@ class JobManager:
             resp["queue_position"] = 1
         if job.status == "failed":
             resp["current_step"] = job.error
+
+        # Include smart grade analysis if available
+        if job.smart_grade_info:
+            try:
+                resp["smart_grade_info"] = json.loads(job.smart_grade_info)
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         return resp
 

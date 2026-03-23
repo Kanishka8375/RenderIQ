@@ -67,6 +67,12 @@ export const api = {
   getPresetPreview: (name) =>
     `${API_BASE}/api/presets/${encodeURIComponent(name)}/preview`,
 
+  getRecommendations: (jobId) =>
+    fetch(`${API_BASE}/api/presets/recommend/${encodeURIComponent(jobId)}`).then((r) => {
+      if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'Recommendation failed'); });
+      return r.json();
+    }),
+
   startGrade: (config) =>
     fetch(`${API_BASE}/api/grade/start`, {
       method: 'POST',

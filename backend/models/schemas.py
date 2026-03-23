@@ -19,7 +19,7 @@ class ReferenceUploadResponse(BaseModel):
 
 class GradeRequest(BaseModel):
     job_id: str
-    mode: str = Field(pattern="^(preset|reference)$")
+    mode: str = Field(pattern="^(preset|reference|smart)$")
     preset_name: str | None = None
     strength: float = Field(default=0.8, ge=0.0, le=1.0)
     multi_scene: bool = False
