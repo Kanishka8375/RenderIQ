@@ -83,6 +83,16 @@ export const api = {
       return r.json();
     }),
 
+  regrade: (config) =>
+    fetch(`${API_BASE}/api/grade/regrade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    }).then((r) => {
+      if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'Re-grade failed'); });
+      return r.json();
+    }),
+
   getStatus: (jobId) =>
     fetch(`${API_BASE}/api/grade/status/${encodeURIComponent(jobId)}`).then((r) => {
       if (!r.ok) throw new Error('Status check failed');

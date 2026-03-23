@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Upload, Palette, Sparkles, Check, ArrowLeft, Brain, Music, Eye, User, Tag } from 'lucide-react';
+import { Upload, Palette, Sparkles, Check, ArrowLeft, Brain, Music, Eye, User } from 'lucide-react';
 import Hero from '../components/landing/Hero';
 import HowItWorks from '../components/landing/HowItWorks';
 import PresetShowcase from '../components/landing/PresetShowcase';
@@ -57,6 +57,21 @@ export default function Home() {
     } catch (err) {
       // Handle inline
     }
+  }, [job]);
+
+  const handleRegrade = useCallback(async (config) => {
+    try {
+      await api.regrade({ ...config, job_id: jobId });
+      setStep(3);
+      job.startPolling();
+    } catch (err) {
+      // Handle inline
+    }
+  }, [job, jobId]);
+
+  const handleTryDifferentPreset = useCallback(() => {
+    job.stopPolling();
+    setStep(2);
   }, [job]);
 
   const handleReset = useCallback(() => {
@@ -274,6 +289,12 @@ export default function Home() {
                                   ))}
                                 </div>
                               )}
+                              <button
+                                onClick={handleTryDifferentPreset}
+                                className="text-sm text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors"
+                              >
+                                Not happy? Try a different preset →
+                              </button>
                             </div>
                           )}
                           <PreviewCompare comparisonUrl={job.result?.comparison_url} />
