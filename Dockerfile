@@ -12,12 +12,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY renderiq/ renderiq/
 COPY backend/ backend/
-COPY presets/ presets/
 COPY cli.py .
 
 # Create non-root user and working directories
 RUN useradd -m appuser && \
-    mkdir -p uploads jobs output && \
+    mkdir -p uploads jobs output presets && \
     chown -R appuser:appuser /app
 
 # Generate built-in presets
