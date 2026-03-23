@@ -13,3 +13,6 @@ uploads/
 jobs/
 node_modules/
 frontend/dist/
+analytics.json
+feedback.json
+demos/
