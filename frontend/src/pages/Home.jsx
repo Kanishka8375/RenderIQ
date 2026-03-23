@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Upload, Palette, Sparkles, Check } from 'lucide-react';
+import { Upload, Palette, Sparkles, Check, ArrowLeft } from 'lucide-react';
 import Hero from '../components/landing/Hero';
 import HowItWorks from '../components/landing/HowItWorks';
 import PresetShowcase from '../components/landing/PresetShowcase';
@@ -156,6 +156,12 @@ export default function Home() {
 
                 {step === 2 && (
                   <div>
+                    <button
+                      onClick={() => { setStep(1); }}
+                      className="flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-white transition-colors mb-4"
+                    >
+                      <ArrowLeft size={16} /> Back to upload
+                    </button>
                     <h2 className="text-2xl font-bold mb-2 text-center">Choose your style</h2>
                     <p className="text-[var(--color-text-secondary)] text-center mb-6">
                       Pick a preset or upload a reference video
@@ -182,6 +188,14 @@ export default function Home() {
 
                 {step === 3 && (
                   <div>
+                    {!isProcessing && job.status !== 'queued' && (
+                      <button
+                        onClick={() => { job.stopPolling(); setStep(2); }}
+                        className="flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-white transition-colors mb-4"
+                      >
+                        <ArrowLeft size={16} /> Back to style selection
+                      </button>
+                    )}
                     {(isProcessing || job.status === 'queued') && (
                       <>
                         <h2 className="text-2xl font-bold mb-2 text-center">Grading in progress</h2>

@@ -11,6 +11,7 @@ import os
 import cv2
 import numpy as np
 from scipy.interpolate import interp1d
+from scipy.ndimage import gaussian_filter1d
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,10 @@ def generate_lut(
 ) -> np.ndarray:
     """Generate a 3D LUT that maps source colors toward reference colors.
 
-    Uses histogram matching in LAB color space for perceptually
-    accurate results.
+    Uses histogram matching in LAB color space with interpolated CDF
+    matching and Gaussian-smoothed transfer curves for perceptually
+    accurate, artifact-free results. The entire LUT grid is processed
+    in a single vectorized pass for speed.
 
     Args:
         source_profile: Color profile from analyzer.analyze_color_profile.
@@ -42,43 +45,42 @@ def generate_lut(
         ref_hist = np.array(reference_profile["lab"]["histograms"][channel])
         lab_mappings[channel] = _histogram_match_mapping(src_hist, ref_hist)
 
-    # Build the 3D LUT
-    lut = np.zeros((size, size, size, 3), dtype=np.float32)
-
-    # Create grid of input RGB values
+    # Build the 3D LUT — vectorized over the full grid
     grid = np.linspace(0, 1, size, dtype=np.float32)
+    rr, gg, bb = np.meshgrid(grid, grid, grid, indexing="ij")
 
-    for ri, r in enumerate(grid):
-        for gi, g in enumerate(grid):
-            for bi, b in enumerate(grid):
-                # Convert input RGB (0-1) to BGR uint8 for OpenCV
-                rgb_pixel = np.array([[[r, g, b]]], dtype=np.float32) * 255.0
-                bgr_pixel = rgb_pixel[:, :, ::-1].astype(np.uint8)
+    # Shape (size^3, 3) RGB pixels in [0, 1]
+    rgb_flat = np.stack([rr.ravel(), gg.ravel(), bb.ravel()], axis=-1)
 
-                # Convert to LAB
-                lab_pixel = cv2.cvtColor(bgr_pixel, cv2.COLOR_BGR2LAB)
-                l_val = float(lab_pixel[0, 0, 0])
-                a_val = float(lab_pixel[0, 0, 1])
-                b_val = float(lab_pixel[0, 0, 2])
+    # Convert RGB [0,1] -> BGR [0,1] -> LAB via float32 path
+    # OpenCV float32: input BGR in [0,1], output L in [0,100], a/b in [-127,127]
+    bgr_batch = rgb_flat[:, ::-1].reshape(-1, 1, 3).astype(np.float32)
+    lab_batch = cv2.cvtColor(bgr_batch, cv2.COLOR_BGR2Lab)
+    lab_flat = lab_batch.reshape(-1, 3)
 
-                # Apply histogram matching in LAB
-                l_mapped = lab_mappings["L"](l_val)
-                a_mapped = lab_mappings["A"](a_val)
-                b_mapped = lab_mappings["B"](b_val)
+    # Our histograms were built from uint8 LAB: L in [0,255], a in [0,255], b in [0,255]
+    # Convert float32 LAB -> uint8 LAB scale for the transfer functions
+    l_vals = lab_flat[:, 0] * (255.0 / 100.0)
+    a_vals = lab_flat[:, 1] + 128.0
+    b_vals = lab_flat[:, 2] + 128.0
 
-                # Clamp to valid LAB ranges
-                l_mapped = np.clip(l_mapped, 0, 255)
-                a_mapped = np.clip(a_mapped, 0, 255)
-                b_mapped = np.clip(b_mapped, 0, 255)
+    # Apply transfer functions (output is in uint8-scale LAB)
+    l_mapped = np.clip(lab_mappings["L"](l_vals), 0, 255)
+    a_mapped = np.clip(lab_mappings["A"](a_vals), 0, 255)
+    b_mapped = np.clip(lab_mappings["B"](b_vals), 0, 255)
 
-                # Convert back to RGB
-                lab_out = np.array(
-                    [[[l_mapped, a_mapped, b_mapped]]], dtype=np.uint8
-                )
-                bgr_out = cv2.cvtColor(lab_out, cv2.COLOR_LAB2BGR)
-                rgb_out = bgr_out[0, 0, ::-1].astype(np.float32) / 255.0
+    # Convert uint8-scale LAB back to float32-scale LAB for OpenCV
+    lab_out_float = np.stack([
+        l_mapped * (100.0 / 255.0),
+        a_mapped - 128.0,
+        b_mapped - 128.0,
+    ], axis=-1).astype(np.float32).reshape(-1, 1, 3)
 
-                lut[ri, gi, bi] = np.clip(rgb_out, 0.0, 1.0)
+    # Convert LAB -> BGR -> RGB in one batch (float32 preserves full precision)
+    bgr_out = cv2.cvtColor(lab_out_float, cv2.COLOR_Lab2BGR)
+    rgb_out = bgr_out.reshape(-1, 3)[:, ::-1]  # BGR [0,1] -> RGB [0,1]
+
+    lut = np.clip(rgb_out, 0.0, 1.0).reshape(size, size, size, 3).astype(np.float32)
 
     logger.info("Generated %dx%dx%d LUT (%d entries)", size, size, size, size**3)
     return lut
@@ -104,7 +106,6 @@ def generate_lut_from_curves(
     Returns:
         3D LUT array of shape (size, size, size, 3), float32, [0.0, 1.0].
     """
-    # Build interpolation functions
     x = np.arange(256, dtype=np.float64)
     l_fn = interp1d(x, l_curve, kind="linear", bounds_error=False,
                     fill_value=(l_curve[0], l_curve[-1]))
@@ -113,29 +114,32 @@ def generate_lut_from_curves(
     b_fn = interp1d(x, b_curve, kind="linear", bounds_error=False,
                     fill_value=(b_curve[0], b_curve[-1]))
 
-    lut = np.zeros((size, size, size, 3), dtype=np.float32)
     grid = np.linspace(0, 1, size, dtype=np.float32)
+    rr, gg, bb = np.meshgrid(grid, grid, grid, indexing="ij")
 
-    for ri, r in enumerate(grid):
-        for gi, g in enumerate(grid):
-            for bi, b in enumerate(grid):
-                rgb_pixel = np.array([[[r, g, b]]], dtype=np.float32) * 255.0
-                bgr_pixel = rgb_pixel[:, :, ::-1].astype(np.uint8)
-                lab_pixel = cv2.cvtColor(bgr_pixel, cv2.COLOR_BGR2LAB)
+    rgb_flat = np.stack([rr.ravel(), gg.ravel(), bb.ravel()], axis=-1)
+    bgr_batch = rgb_flat[:, ::-1].reshape(-1, 1, 3).astype(np.float32)
+    lab_batch = cv2.cvtColor(bgr_batch, cv2.COLOR_BGR2Lab)
+    lab_flat = lab_batch.reshape(-1, 3)
 
-                l_val = float(lab_pixel[0, 0, 0])
-                a_val = float(lab_pixel[0, 0, 1])
-                b_val = float(lab_pixel[0, 0, 2])
+    l_vals = lab_flat[:, 0] * (255.0 / 100.0)
+    a_vals = lab_flat[:, 1] + 128.0
+    b_vals = lab_flat[:, 2] + 128.0
 
-                l_out = np.clip(l_fn(l_val), 0, 255)
-                a_out = np.clip(a_fn(a_val), 0, 255)
-                b_out = np.clip(b_fn(b_val), 0, 255)
+    l_mapped = np.clip(l_fn(l_vals), 0, 255)
+    a_mapped = np.clip(a_fn(a_vals), 0, 255)
+    b_mapped = np.clip(b_fn(b_vals), 0, 255)
 
-                lab_out = np.array([[[l_out, a_out, b_out]]], dtype=np.uint8)
-                bgr_out = cv2.cvtColor(lab_out, cv2.COLOR_LAB2BGR)
-                rgb_out = bgr_out[0, 0, ::-1].astype(np.float32) / 255.0
-                lut[ri, gi, bi] = np.clip(rgb_out, 0.0, 1.0)
+    lab_out_float = np.stack([
+        l_mapped * (100.0 / 255.0),
+        a_mapped - 128.0,
+        b_mapped - 128.0,
+    ], axis=-1).astype(np.float32).reshape(-1, 1, 3)
 
+    bgr_out = cv2.cvtColor(lab_out_float, cv2.COLOR_Lab2BGR)
+    rgb_out = bgr_out.reshape(-1, 3)[:, ::-1]
+
+    lut = np.clip(rgb_out, 0.0, 1.0).reshape(size, size, size, 3).astype(np.float32)
     return lut
 
 
@@ -226,26 +230,56 @@ def _histogram_match_mapping(
 ) -> interp1d:
     """Build a transfer function that maps source histogram to reference.
 
-    Uses CDF matching: for each source intensity, find the reference
-    intensity with the same cumulative distribution position.
+    Uses interpolated CDF matching with Gaussian smoothing for accurate,
+    artifact-free color transfer. For each source intensity, finds the
+    exact (sub-bin interpolated) reference intensity that matches its
+    cumulative distribution position.
     """
     # Compute CDFs
-    src_cdf = np.cumsum(src_hist)
-    src_cdf = src_cdf / (src_cdf[-1] + 1e-10)
+    src_cdf = np.cumsum(src_hist).astype(np.float64)
+    src_cdf /= src_cdf[-1] + 1e-10
 
-    ref_cdf = np.cumsum(ref_hist)
-    ref_cdf = ref_cdf / (ref_cdf[-1] + 1e-10)
+    ref_cdf = np.cumsum(ref_hist).astype(np.float64)
+    ref_cdf /= ref_cdf[-1] + 1e-10
 
-    # For each source bin, find the reference bin with closest CDF value
+    # Build mapping with sub-bin interpolation for precision
+    ref_x = np.arange(256, dtype=np.float64)
     mapping = np.zeros(256, dtype=np.float64)
+
     for src_val in range(256):
-        # Find reference value where ref_cdf is closest to src_cdf[src_val]
-        idx = np.searchsorted(ref_cdf, src_cdf[src_val])
-        mapping[src_val] = min(idx, 255)
+        target_cdf = src_cdf[src_val]
+
+        # Find bracketing indices in reference CDF
+        idx = np.searchsorted(ref_cdf, target_cdf)
+
+        if idx <= 0:
+            mapping[src_val] = 0.0
+        elif idx >= 255:
+            mapping[src_val] = 255.0
+        else:
+            # Linear interpolation between ref bins for sub-bin precision
+            low = ref_cdf[idx - 1]
+            high = ref_cdf[idx]
+            denom = high - low
+            if denom > 1e-12:
+                frac = (target_cdf - low) / denom
+                mapping[src_val] = (idx - 1) + frac
+            else:
+                mapping[src_val] = float(idx)
+
+    # Gaussian smooth the transfer curve to prevent harsh jumps / banding
+    # sigma=1.5 is gentle enough to preserve detail but removes noise
+    mapping = gaussian_filter1d(mapping, sigma=1.5)
+    mapping = np.clip(mapping, 0, 255)
+
+    # Ensure monotonicity (a non-monotonic curve creates color inversions)
+    for i in range(1, 256):
+        if mapping[i] < mapping[i - 1]:
+            mapping[i] = mapping[i - 1]
 
     # Create interpolation function for continuous input values
     x = np.arange(256, dtype=np.float64)
     return interp1d(
-        x, mapping, kind="linear", bounds_error=False,
+        x, mapping, kind="cubic", bounds_error=False,
         fill_value=(mapping[0], mapping[-1])
     )
