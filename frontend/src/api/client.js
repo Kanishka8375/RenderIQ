@@ -85,4 +85,11 @@ export const api = {
 
   getDownloadUrl: (jobId, type) =>
     `${API_BASE}/api/download/${jobId}/${type}`,
+
+  submitFeedback: (jobId, rating, comment = '') =>
+    fetch(`${API_BASE}/api/admin/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, rating, comment }),
+    }).then((r) => r.json()),
 };

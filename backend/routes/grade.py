@@ -128,24 +128,54 @@ def _run_grade_job(job_id: str, request: GradeRequest):
             else:
                 final_lut_path = lut_path
 
+        end_time = time.time()
         job_manager.update_job(
             job_id,
             status="completed",
             progress=100,
             current_step="Complete",
-            end_time=time.time(),
+            end_time=end_time,
             graded_video_path=graded_video_path,
             lut_path=final_lut_path,
             preview_path=preview_path,
             comparison_path=comparison_path,
         )
 
+        # Log analytics
+        try:
+            from backend.routes.admin import log_job_analytics
+            log_job_analytics(
+                job_id=job_id,
+                preset=request.preset_name,
+                mode=request.mode,
+                duration=job.duration,
+                resolution=f"{job.width}x{job.height}",
+                processing_time=end_time - job.start_time,
+                success=True,
+            )
+        except Exception:
+            logger.warning("Failed to log analytics for job %s", job_id)
+
     except Exception as e:
         logger.exception("Grading failed for job %s", job_id)
+        end_time = time.time()
         job_manager.update_job(
             job_id, status="failed", error=str(e),
-            current_step=f"Error: {e}", end_time=time.time(),
+            current_step=f"Error: {e}", end_time=end_time,
         )
+        try:
+            from backend.routes.admin import log_job_analytics
+            log_job_analytics(
+                job_id=job_id,
+                preset=request.preset_name,
+                mode=request.mode,
+                duration=job.duration,
+                resolution=f"{job.width}x{job.height}",
+                processing_time=end_time - (job.start_time or end_time),
+                success=False,
+            )
+        except Exception:
+            pass
 
 
 @router.post("/start", response_model=GradeStartResponse)

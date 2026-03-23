@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import App from '../App';
 
@@ -22,20 +22,36 @@ describe('App', () => {
     expect(screen.getByText('IQ')).toBeInTheDocument();
   });
 
-  it('shows upload zone on initial load', () => {
+  it('shows hero headline on landing page', () => {
     render(<App />);
-    expect(screen.getByText('Drop your video here')).toBeInTheDocument();
+    expect(screen.getByText(/Cinematic/)).toBeInTheDocument();
+    expect(screen.getByText(/in Seconds/)).toBeInTheDocument();
   });
 
-  it('shows accepted formats in upload zone', () => {
+  it('shows How It Works section', () => {
     render(<App />);
-    expect(screen.getByText(/MP4, MOV, AVI, MKV, WebM/)).toBeInTheDocument();
+    expect(screen.getByText('How It Works')).toBeInTheDocument();
+    expect(screen.getAllByText('Upload Your Video').length).toBeGreaterThan(0);
+    expect(screen.getByText('Pick a Style')).toBeInTheDocument();
+    expect(screen.getByText('Download Your Video')).toBeInTheDocument();
   });
 
-  it('shows step indicators', () => {
+  it('shows CTA buttons', () => {
     render(<App />);
-    expect(screen.getByText('Upload')).toBeInTheDocument();
-    expect(screen.getByText('Style')).toBeInTheDocument();
-    expect(screen.getByText('Result')).toBeInTheDocument();
+    const tryButtons = screen.getAllByText(/Try It Free/);
+    expect(tryButtons.length).toBeGreaterThan(0);
+  });
+
+  it('shows tool section after clicking CTA', () => {
+    render(<App />);
+    const ctaButton = screen.getAllByText(/Try It Free/)[0];
+    fireEvent.click(ctaButton);
+    expect(screen.getByText('Upload your video')).toBeInTheDocument();
+  });
+
+  it('shows footer with credits', () => {
+    render(<App />);
+    expect(screen.getByText(/Built by Kanishka/)).toBeInTheDocument();
+    expect(screen.getByText(/2026 RenderIQ/)).toBeInTheDocument();
   });
 });

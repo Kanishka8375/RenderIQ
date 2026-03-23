@@ -3,9 +3,13 @@
 import os
 import uuid
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from backend.config import config
+
+limiter = Limiter(key_func=get_remote_address)
 from backend.models.schemas import UploadResponse, ReferenceUploadResponse, ErrorResponse
 from backend.services.job_manager import job_manager
 from backend.services.storage import (
@@ -20,7 +24,8 @@ router = APIRouter(prefix="/api/upload", tags=["upload"])
 
 
 @router.post("/raw", response_model=UploadResponse)
-async def upload_raw(file: UploadFile = File(...)):
+@limiter.limit(config.RATE_LIMIT_UPLOADS)
+async def upload_raw(request: Request, file: UploadFile = File(...)):
     """Upload raw footage video file."""
     # Validate file extension
     ext = os.path.splitext(file.filename or "")[1].lower()

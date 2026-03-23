@@ -4,11 +4,16 @@ import asyncio
 import logging
 import os
 import sys
+import time
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Ensure project root is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,9 +21,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.config import config
 from backend.services.storage import ensure_dirs
 from backend.services.job_manager import job_manager
-from backend.routes import upload, grade, presets, download
+from backend.routes import upload, grade, presets, download, admin
 
 logger = logging.getLogger("renderiq.api")
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
 async def _periodic_cleanup():
@@ -41,13 +49,13 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
-    logger.info("RenderIQ API starting up")
+    logger.info("RenderIQ API starting up (env=%s)", config.ENV)
 
     # Generate presets if they don't exist
     from renderiq.presets_builder import generate_all_presets, PRESETS_DIR
     if not os.path.isdir(PRESETS_DIR) or len(os.listdir(PRESETS_DIR)) < 10:
         logger.info("Generating built-in presets...")
-        generate_all_presets(size=17)  # Smaller size for faster generation
+        generate_all_presets(size=17)
         logger.info("Built-in presets generated")
 
     # Start cleanup task
@@ -63,14 +71,57 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RenderIQ API",
     description="AI Color Grade Transfer Tool",
-    version="0.2.0",
+    version="1.0.0",
     lifespan=lifespan,
+    docs_url="/api/docs" if config.DEBUG else None,
+    redoc_url=None,
 )
+
+# Rate limiter
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please try again later."},
+    )
+
+
+# Global exception handler for production
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if config.DEBUG:
+        raise exc
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal error occurred. Please try again."},
+    )
+
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+    logger.info(
+        "%s %s %s %.3fs %s",
+        request.client.host if request.client else "-",
+        request.method,
+        request.url.path,
+        duration,
+        response.status_code,
+    )
+    return response
+
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,11 +132,12 @@ app.include_router(upload.router)
 app.include_router(grade.router)
 app.include_router(presets.router)
 app.include_router(download.router)
+app.include_router(admin.router)
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.2.0"}
+    return {"status": "ok", "version": "1.0.0"}
 
 
 # Serve frontend static files if build exists

@@ -18,5 +18,20 @@ class Config:
     ALLOWED_VIDEO_FORMATS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
     CLEANUP_INTERVAL_SECONDS = 300  # Check for expired jobs every 5 minutes
 
+    # Production settings
+    ENV = os.environ.get("RENDERIQ_ENV", "development")
+    DEBUG = ENV != "production"
+    ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY", "renderiq-dev-key")
+    ALLOWED_ORIGINS = (
+        ["*"] if ENV != "production"
+        else [
+            "https://renderiq.in",
+            "https://www.renderiq.in",
+        ]
+    )
+    RATE_LIMIT_UPLOADS = "5/hour" if ENV == "production" else "1000/hour"
+    FEEDBACK_FILE = os.path.join(ROOT_DIR, "feedback.json")
+    ANALYTICS_FILE = os.path.join(ROOT_DIR, "analytics.json")
+
 
 config = Config()
