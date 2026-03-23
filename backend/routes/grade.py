@@ -96,6 +96,13 @@ def _run_grade_job(job_id: str, request: GradeRequest):
             job_manager.update_job(job_id, current_step="Applying grade to video...", progress=30)
             graded_video_path = os.path.join(work_dir, "graded.mp4")
 
+            def ffmpeg_progress(pct):
+                # Map FFmpeg 0-100 to job 30-90
+                job_pct = 30 + int(pct * 0.6)
+                job_manager.update_job(
+                    job_id, current_step="Applying grade to video...", progress=job_pct,
+                )
+
             if request.multi_scene and luts and cluster_profiles:
                 apply_multi_scene_lut(
                     job.raw_path, luts, cluster_profiles, graded_video_path,
@@ -105,6 +112,7 @@ def _run_grade_job(job_id: str, request: GradeRequest):
                 apply_lut_to_video(
                     job.raw_path, lut, graded_video_path,
                     strength=request.strength, auto_wb=request.auto_wb,
+                    progress_callback=ffmpeg_progress,
                 )
 
         job_manager.update_job(job_id, current_step="Generating preview...", progress=90)
@@ -305,6 +313,57 @@ async def start_grade(request: GradeRequest):
     )
 
     message = "Grading started"
+    if status == "queued":
+        message = f"Queued (position {queue_pos}). Will start automatically."
+
+    return GradeStartResponse(
+        job_id=request.job_id,
+        status=status,
+        message=message,
+    )
+
+
+@router.post("/regrade")
+async def regrade(request: GradeRequest):
+    """Re-grade an already-uploaded video with different settings.
+
+    Reuses the existing raw footage — no re-upload needed.
+    Resets the job status and starts a fresh grading pass.
+    """
+    job = job_manager.get_job(request.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
+
+    if not job.raw_path or not os.path.isfile(job.raw_path):
+        raise HTTPException(status_code=400, detail="Raw footage not found")
+
+    if request.mode == "reference":
+        if not job.reference_path or not os.path.isfile(job.reference_path):
+            raise HTTPException(status_code=400, detail="Reference video not uploaded yet")
+
+    if request.mode == "preset" and not request.preset_name:
+        raise HTTPException(status_code=400, detail="Preset name required for preset mode")
+
+    # Reset job state for re-grading
+    job_manager.update_job(
+        request.job_id,
+        status="pending",
+        progress=0,
+        current_step="",
+        error="",
+        graded_video_path="",
+        preview_path="",
+        comparison_path="",
+        smart_grade_info="",
+    )
+
+    task_fn = _run_smart_grade_job if request.mode == "smart" else _run_grade_job
+
+    status, queue_pos = job_manager.submit_grade_task(
+        request.job_id, task_fn, request
+    )
+
+    message = "Re-grading started"
     if status == "queued":
         message = f"Queued (position {queue_pos}). Will start automatically."
 

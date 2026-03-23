@@ -111,10 +111,19 @@ def smart_grade(
         # Fallback: try generating it
         preset_path = get_preset_path(preset)
 
-    # Step 6: Apply grade
+    # Step 6: Apply grade via FFmpeg lut3d (fast native path)
     _progress("Applying color grade...", 50)
     step_start = time.time()
-    apply_lut_to_video(video_path, preset_path, output_path, strength=strength)
+
+    def ffmpeg_progress(pct):
+        # Map FFmpeg 0-100 to smart pipeline 50-90
+        mapped = 50 + int(pct * 0.4)
+        _progress("Applying color grade...", mapped)
+
+    apply_lut_to_video(
+        video_path, preset_path, output_path,
+        strength=strength, progress_callback=ffmpeg_progress,
+    )
     steps.append({"step": "grading", "time": round(time.time() - step_start, 2)})
 
     total_time = time.time() - start

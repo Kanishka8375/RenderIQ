@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, Check, Info, Wand2, Brain, Music, Eye, User, Tag } from 'lucide-react';
+import { Upload, Check, Info, Wand2, Brain, Music, Eye, User, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../api/client';
 import StrengthSlider from './StrengthSlider';
 
@@ -11,6 +11,7 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
   const [strength, setStrength] = useState(80);
   const [multiScene, setMultiScene] = useState(false);
   const [autoWb, setAutoWb] = useState(false);
+  const [outputFormat, setOutputFormat] = useState('both');
   const [refUploading, setRefUploading] = useState(false);
   const [refUploaded, setRefUploaded] = useState(false);
   const [refError, setRefError] = useState(null);
@@ -18,7 +19,6 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
   const [recommending, setRecommending] = useState(false);
   const [recommendations, setRecommendations] = useState(null);
   const [recommendError, setRecommendError] = useState(null);
-  const [smartStarted, setSmartStarted] = useState(false);
 
   useEffect(() => {
     api.getPresets()
@@ -33,7 +33,6 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
     try {
       const data = await api.getRecommendations(jobId);
       setRecommendations(data);
-      // Auto-select the top recommendation
       if (data.recommendations?.length > 0) {
         setSelectedPreset(data.recommendations[0].name);
       }
@@ -68,12 +67,11 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
   const handleGrade = () => {
     if (!canGrade) return;
     if (tab === 'smart') {
-      setSmartStarted(true);
       onStartGrade({
         job_id: jobId,
         mode: 'smart',
         strength: strength / 100,
-        output_format: 'both',
+        output_format: outputFormat,
       });
       return;
     }
@@ -84,7 +82,7 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
       strength: strength / 100,
       multi_scene: multiScene,
       auto_wb: autoWb,
-      output_format: 'both',
+      output_format: outputFormat,
     });
   };
 
@@ -112,10 +110,11 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
         ))}
       </div>
 
-      {/* Smart Grade */}
+      {/* Smart Grade Tab */}
       {tab === 'smart' && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-[var(--color-primary)]/20 bg-gradient-to-br from-[var(--color-primary)]/5 to-[var(--color-secondary)]/5 p-6 space-y-4">
+          <div className="rounded-xl border border-[var(--color-primary)]/20 bg-gradient-to-br from-[var(--color-primary)]/5 to-[var(--color-secondary)]/5 p-6 space-y-5">
+            {/* Header */}
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/15 flex items-center justify-center">
                 <Brain size={24} className="text-[var(--color-primary)]" />
@@ -123,44 +122,39 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
               <div>
                 <h3 className="font-semibold text-lg">Smart Auto Grade</h3>
                 <p className="text-sm text-[var(--color-text-secondary)]">
-                  AI analyzes your video's audio mood + visual content to pick the perfect color grade
+                  AI analyzes your video's mood — visuals, music, pacing — then applies the perfect color grade automatically.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
-                <div className="flex items-center gap-2 mb-1">
-                  <Music size={14} className="text-[var(--color-secondary)]" />
-                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">Audio</span>
-                </div>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Tempo, energy, mood detection
-                </p>
+            {/* Feature list */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="flex items-center gap-2.5 text-[var(--color-text-secondary)]">
+                <Music size={14} className="text-[var(--color-secondary)] shrink-0" />
+                <span>Analyzes music tempo &amp; energy</span>
               </div>
-              <div className="p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
-                <div className="flex items-center gap-2 mb-1">
-                  <Eye size={14} className="text-[var(--color-secondary)]" />
-                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">Visual</span>
-                </div>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Scene, lighting, motion analysis
-                </p>
+              <div className="flex items-center gap-2.5 text-[var(--color-text-secondary)]">
+                <Eye size={14} className="text-[var(--color-secondary)] shrink-0" />
+                <span>Detects scene type &amp; lighting</span>
               </div>
-              <div className="p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
-                <div className="flex items-center gap-2 mb-1">
-                  <User size={14} className="text-[var(--color-secondary)]" />
-                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">Faces</span>
-                </div>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Skin-tone safe grading
-                </p>
+              <div className="flex items-center gap-2.5 text-[var(--color-text-secondary)]">
+                <User size={14} className="text-[var(--color-secondary)] shrink-0" />
+                <span>Protects skin tones (face detection)</span>
+              </div>
+              <div className="flex items-center gap-2.5 text-[var(--color-text-secondary)]">
+                <Check size={14} className="text-[var(--color-success)] shrink-0" />
+                <span>Matches grade to content mood</span>
               </div>
             </div>
 
-            <p className="text-xs text-[var(--color-text-secondary)] text-center">
-              No configuration needed — just click Grade and let the AI do the work
-            </p>
+            {/* Info callout */}
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
+              <Info size={14} className="text-[var(--color-text-secondary)] shrink-0 mt-0.5" />
+              <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                No configuration needed — just click <strong className="text-white">Smart Grade My Video</strong> and let the AI do the work.
+                You can still adjust the strength slider below to fine-tune the result.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -195,43 +189,40 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
                 Recommended for your video
               </p>
               <div className="space-y-2">
-                {recommendations.recommendations.map((rec, i) => {
-                  const preset = presets.find((p) => p.name === rec.name);
-                  return (
-                    <button
-                      key={rec.name}
-                      onClick={() => setSelectedPreset(rec.name)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all duration-200 flex items-center gap-3 ${
-                        selectedPreset === rec.name
-                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
-                          : 'border-white/10 bg-[var(--color-surface)] hover:border-white/20'
-                      }`}
-                    >
-                      <div className={`
-                        w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-                        ${i === 0 ? 'bg-[var(--color-primary)] text-white' : 'bg-white/10 text-[var(--color-text-secondary)]'}
-                      `}>
-                        {i + 1}
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        {rec.preview_colors.map((color, ci) => (
-                          <div
-                            key={ci}
-                            className="w-3 h-3 rounded-sm"
-                            style={{ backgroundColor: color }}
-                          />
-                        ))}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">{rec.display_name}</p>
-                        <p className="text-xs text-[var(--color-text-secondary)] truncate">{rec.reason}</p>
-                      </div>
-                      {selectedPreset === rec.name && (
-                        <Check size={16} className="text-[var(--color-primary)] shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
+                {recommendations.recommendations.map((rec, i) => (
+                  <button
+                    key={rec.name}
+                    onClick={() => setSelectedPreset(rec.name)}
+                    className={`w-full text-left p-3 rounded-lg border transition-all duration-200 flex items-center gap-3 ${
+                      selectedPreset === rec.name
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
+                        : 'border-white/10 bg-[var(--color-surface)] hover:border-white/20'
+                    }`}
+                  >
+                    <div className={`
+                      w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
+                      ${i === 0 ? 'bg-[var(--color-primary)] text-white' : 'bg-white/10 text-[var(--color-text-secondary)]'}
+                    `}>
+                      {i + 1}
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      {rec.preview_colors.map((color, ci) => (
+                        <div
+                          key={ci}
+                          className="w-3 h-3 rounded-sm"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{rec.display_name}</p>
+                      <p className="text-xs text-[var(--color-text-secondary)] truncate">{rec.reason}</p>
+                    </div>
+                    {selectedPreset === rec.name && (
+                      <Check size={16} className="text-[var(--color-primary)] shrink-0" />
+                    )}
+                  </button>
+                ))}
               </div>
               {recommendations.analysis && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
@@ -280,7 +271,6 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
                         TOP {recommendations.recommendations.indexOf(rec) + 1}
                       </div>
                     )}
-                    {/* Color swatches */}
                     <div className="flex gap-1 mb-2">
                       {preset.preview_colors.map((color, i) => (
                         <div
@@ -361,30 +351,41 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
       {/* Strength Slider */}
       <StrengthSlider value={strength} onChange={setStrength} />
 
+      {/* Output Format */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Output Format</label>
+        <div className="flex gap-2">
+          {[
+            { key: 'video', label: 'Video (MP4)' },
+            { key: 'lut', label: 'LUT File (.cube)' },
+            { key: 'both', label: 'Both' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setOutputFormat(key)}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                outputFormat === key
+                  ? 'bg-[var(--color-primary)] text-white'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:text-white border border-white/5'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Advanced Options */}
       <div>
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="text-sm text-[var(--color-text-secondary)] hover:text-white transition-colors"
+          className="text-sm text-[var(--color-text-secondary)] hover:text-white transition-colors flex items-center gap-1"
         >
+          {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           {showAdvanced ? 'Hide' : 'Show'} advanced options
         </button>
         {showAdvanced && (
           <div className="mt-3 space-y-3 p-4 rounded-xl bg-[var(--color-surface)] border border-white/5">
-            <label className="flex items-center justify-between cursor-pointer">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">Multi-scene mode</span>
-                <span className="text-xs text-[var(--color-text-secondary)]" title="Generates separate LUTs for different scenes">
-                  <Info size={14} />
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={multiScene}
-                onChange={(e) => setMultiScene(e.target.checked)}
-                className="w-4 h-4 accent-[var(--color-primary)]"
-              />
-            </label>
             <label className="flex items-center justify-between cursor-pointer">
               <div className="flex items-center gap-2">
                 <span className="text-sm">Auto white balance</span>
@@ -396,6 +397,20 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
                 type="checkbox"
                 checked={autoWb}
                 onChange={(e) => setAutoWb(e.target.checked)}
+                className="w-4 h-4 accent-[var(--color-primary)]"
+              />
+            </label>
+            <label className="flex items-center justify-between cursor-pointer">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Multi-scene mode</span>
+                <span className="text-xs text-[var(--color-text-secondary)]" title="Generates separate LUTs for different scenes">
+                  <Info size={14} />
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={multiScene}
+                onChange={(e) => setMultiScene(e.target.checked)}
                 className="w-4 h-4 accent-[var(--color-primary)]"
               />
             </label>

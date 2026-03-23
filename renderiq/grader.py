@@ -6,6 +6,7 @@ with trilinear interpolation fallback for single-frame operations.
 
 import logging
 import os
+import re
 import subprocess
 import tempfile
 
@@ -115,6 +116,40 @@ def _get_cube_path(lut: np.ndarray | str, work_dir: str | None = None) -> tuple[
     return cube_path, True
 
 
+def _run_ffmpeg_with_progress(cmd, total_duration, progress_callback=None):
+    """Run FFmpeg and parse stderr for real-time progress reporting.
+
+    Args:
+        cmd: FFmpeg command list.
+        total_duration: Video duration in seconds for progress calculation.
+        progress_callback: Optional fn(progress_pct: int) called as FFmpeg runs.
+
+    Returns:
+        (returncode, stderr_text)
+    """
+    if progress_callback is None or total_duration <= 0:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        return result.returncode, result.stderr
+
+    process = subprocess.Popen(
+        cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )
+    stderr_lines = []
+    time_pattern = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+
+    for line in process.stderr:
+        stderr_lines.append(line)
+        match = time_pattern.search(line)
+        if match:
+            h, m, s = match.groups()
+            current = int(h) * 3600 + int(m) * 60 + float(s)
+            pct = min(int((current / total_duration) * 100), 99)
+            progress_callback(pct)
+
+    process.wait()
+    return process.returncode, "".join(stderr_lines)
+
+
 def apply_lut_to_video(
     video_path: str,
     lut: np.ndarray | str,
@@ -124,6 +159,7 @@ def apply_lut_to_video(
     auto_wb: bool = False,
     workers: int | None = None,
     use_gpu: bool = False,
+    progress_callback=None,
 ) -> str:
     """Apply LUT to a video using FFmpeg's native lut3d filter.
 
@@ -140,6 +176,7 @@ def apply_lut_to_video(
             path; only applies to preview_grade single-frame operations).
         workers: Unused, kept for API compatibility.
         use_gpu: Try to use GPU encoding (h264_nvenc).
+        progress_callback: Optional fn(progress_pct: int) for real-time updates.
 
     Returns:
         Output file path.
@@ -152,20 +189,19 @@ def apply_lut_to_video(
 
     try:
         info = get_video_info(video_path)
-        total_frames = int(info["duration"] * info["fps"])
+        total_duration = info["duration"]
+        total_frames = int(total_duration * info["fps"])
         logger.info(
             "Grading %d frames (%dx%d @ %.1f fps) via FFmpeg lut3d",
             total_frames, info["width"], info["height"], info["fps"],
         )
 
         # Build the video filter chain
-        # Escape cube_path for FFmpeg filter syntax (single quotes, backslash-escape)
         escaped_cube = cube_path.replace("\\", "\\\\").replace("'", "'\\''")
 
         if strength >= 1.0:
             vf = f"lut3d='{escaped_cube}'"
         else:
-            # Blend original and graded using split + mix
             orig_weight = 1.0 - strength
             vf = (
                 f"split[a][b];"
@@ -180,7 +216,7 @@ def apply_lut_to_video(
             encoder = "h264_nvenc"
             encoder_opts = ["-preset", "medium", "-qp", str(quality)]
 
-        # Build FFmpeg command
+        # Build FFmpeg command — include -progress pipe for real-time output
         cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
@@ -190,18 +226,18 @@ def apply_lut_to_video(
             "-movflags", "+faststart",
         ]
 
-        # Handle audio
         if info["has_audio"]:
             cmd.extend(["-c:a", "copy"])
 
         cmd.append(output_path)
 
         logger.debug("FFmpeg command: %s", " ".join(cmd))
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        returncode, stderr = _run_ffmpeg_with_progress(
+            cmd, total_duration, progress_callback,
+        )
 
-        if result.returncode != 0:
-            # If audio copy failed, retry with AAC re-encode
-            if info["has_audio"] and "audio" in result.stderr.lower():
+        if returncode != 0:
+            if info["has_audio"] and "audio" in stderr.lower():
                 logger.warning("Audio copy failed, re-encoding to AAC")
                 cmd_retry = [
                     "ffmpeg", "-y",
@@ -213,10 +249,16 @@ def apply_lut_to_video(
                     "-c:a", "aac", "-b:a", "192k",
                     output_path,
                 ]
-                subprocess.run(cmd_retry, capture_output=True, text=True, check=True)
+                returncode2, stderr2 = _run_ffmpeg_with_progress(
+                    cmd_retry, total_duration, progress_callback,
+                )
+                if returncode2 != 0:
+                    raise RuntimeError(
+                        f"FFmpeg grading failed (exit {returncode2}): {stderr2[-500:]}"
+                    )
             else:
                 raise RuntimeError(
-                    f"FFmpeg grading failed (exit {result.returncode}): {result.stderr[-500:]}"
+                    f"FFmpeg grading failed (exit {returncode}): {stderr[-500:]}"
                 )
 
         logger.info("Graded video saved to %s", output_path)
