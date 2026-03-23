@@ -1,4 +1,4 @@
-"""Preset listing and preview endpoints."""
+"""Preset listing, preview, and auto-recommendation endpoints."""
 
 import io
 import os
@@ -126,3 +126,52 @@ async def preset_preview(name: str):
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+@router.get("/recommend/{job_id}")
+async def recommend_preset(job_id: str, top_n: int = 3):
+    """Analyze uploaded video and recommend best-fitting presets.
+
+    Returns ranked list of preset recommendations with scores and reasons.
+    """
+    from backend.services.job_manager import job_manager
+    from renderiq.sampler import extract_keyframes
+    from renderiq.auto_recommend import analyze_video_characteristics, recommend_presets
+
+    job = job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    if not job.raw_path or not os.path.isfile(job.raw_path):
+        raise HTTPException(status_code=400, detail="Raw footage not uploaded yet")
+
+    try:
+        # Extract a small set of keyframes for quick analysis
+        keyframes = extract_keyframes(job.raw_path, max_frames=20)
+        characteristics = analyze_video_characteristics(keyframes)
+        recommendations = recommend_presets(characteristics, top_n=min(top_n, 10))
+
+        return {
+            "job_id": job_id,
+            "analysis": {
+                "brightness": round(characteristics["brightness"], 1),
+                "saturation": round(characteristics["saturation"], 1),
+                "color_temp": characteristics["color_temp"],
+                "contrast": round(characteristics["contrast"], 1),
+                "tags": characteristics["tags"],
+            },
+            "recommendations": [
+                {
+                    "name": r["name"],
+                    "display_name": PRESET_DEFINITIONS[r["name"]]["title"],
+                    "score": r["score"],
+                    "reason": r["reason"],
+                    "preview_colors": PRESET_META.get(r["name"], {}).get(
+                        "preview_colors", ["#808080", "#808080", "#808080"]
+                    ),
+                }
+                for r in recommendations
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
