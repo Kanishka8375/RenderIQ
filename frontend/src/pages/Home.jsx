@@ -26,6 +26,7 @@ export default function Home() {
   const [step, setStep] = useState(1);
   const [jobId, setJobId] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [hasGraded, setHasGraded] = useState(false);
   const upload = useUpload();
   const job = useJob(jobId);
   const toolRef = useRef(null);
@@ -53,6 +54,7 @@ export default function Home() {
     try {
       await api.startGrade(config);
       setStep(3);
+      setHasGraded(true);
       job.startPolling();
     } catch (err) {
       // Handle inline
@@ -80,6 +82,7 @@ export default function Home() {
     setStep(1);
     setJobId(null);
     setShowFeedback(false);
+    setHasGraded(false);
   }, [upload, job]);
 
   const isProcessing = step === 3 && job.status === 'processing';
@@ -195,7 +198,7 @@ export default function Home() {
                     )}
                     <StylePicker
                       jobId={jobId}
-                      onStartGrade={handleStartGrade}
+                      onStartGrade={hasGraded ? handleRegrade : handleStartGrade}
                       onReferenceUploaded={() => {}}
                     />
                   </div>

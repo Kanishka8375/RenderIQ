@@ -132,22 +132,45 @@ def _run_ffmpeg_with_progress(cmd, total_duration, progress_callback=None):
         return result.returncode, result.stderr
 
     process = subprocess.Popen(
-        cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+        cmd,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,  # Don't pipe stdout — avoids deadlock
     )
-    stderr_lines = []
-    time_pattern = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+    stderr_chunks = []
+    time_pattern = re.compile(rb"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+    last_pct = -1
 
-    for line in process.stderr:
-        stderr_lines.append(line)
-        match = time_pattern.search(line)
-        if match:
+    # Read stderr in small chunks to handle FFmpeg's \r progress lines
+    buf = b""
+    while True:
+        chunk = process.stderr.read(512)
+        if not chunk:
+            break
+        buf += chunk
+        stderr_chunks.append(chunk)
+
+        # Scan for time= markers in the buffer
+        for match in time_pattern.finditer(buf):
             h, m, s = match.groups()
             current = int(h) * 3600 + int(m) * 60 + float(s)
             pct = min(int((current / total_duration) * 100), 99)
-            progress_callback(pct)
+            # Throttle: only call back when percentage actually changes
+            if pct > last_pct:
+                last_pct = pct
+                progress_callback(pct)
 
-    process.wait()
-    return process.returncode, "".join(stderr_lines)
+        # Keep only the tail of the buffer to avoid re-matching
+        if len(buf) > 2048:
+            buf = buf[-1024:]
+
+    try:
+        process.wait(timeout=600)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        raise RuntimeError("FFmpeg timed out after 600 seconds")
+
+    return process.returncode, b"".join(stderr_chunks).decode("utf-8", errors="replace")
 
 
 def apply_lut_to_video(

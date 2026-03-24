@@ -210,7 +210,7 @@ def _run_smart_grade_job(job_id: str, request: GradeRequest):
         result = smart_grade(
             video_path=job.raw_path,
             output_path=graded_video_path,
-            strength_override=request.strength if request.strength != 0.8 else None,
+            strength_override=request.strength,
             progress_callback=progress_cb,
         )
 
@@ -333,6 +333,12 @@ async def regrade(request: GradeRequest):
     job = job_manager.get_job(request.job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
+
+    if job.status in ("processing", "queued"):
+        raise HTTPException(
+            status_code=409,
+            detail="Job is currently processing. Wait for it to finish before re-grading.",
+        )
 
     if not job.raw_path or not os.path.isfile(job.raw_path):
         raise HTTPException(status_code=400, detail="Raw footage not found")
