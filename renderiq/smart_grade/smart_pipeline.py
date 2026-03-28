@@ -26,16 +26,19 @@ def smart_grade(
     strength_override: float | None = None,
     preset_override: str | None = None,
     progress_callback=None,
+    lut_only: bool = False,
 ) -> dict:
     """Full smart grade pipeline: analyze audio + visuals, pick grade, apply.
 
     Args:
         video_path: Path to raw footage.
-        output_path: Where to save graded video.
+        output_path: Where to save graded video (ignored if lut_only).
         presets_dir: Directory containing .cube preset files.
         strength_override: If set, overrides auto-detected strength.
         preset_override: If set, overrides auto-detected preset.
         progress_callback: Optional fn(step_name, progress_pct) for updates.
+        lut_only: If True, skip video encoding — only run analysis and
+            return the recommended preset/strength.
 
     Returns:
         Dict with output_path, mood_profile, audio/visual analysis,
@@ -112,24 +115,27 @@ def smart_grade(
         preset_path = get_preset_path(preset)
 
     # Step 6: Apply grade via FFmpeg lut3d (fast native path)
-    _progress("Applying color grade...", 50)
-    step_start = time.time()
+    if not lut_only:
+        _progress("Applying color grade...", 50)
+        step_start = time.time()
 
-    def ffmpeg_progress(pct):
-        # Map FFmpeg 0-100 to smart pipeline 50-90
-        mapped = 50 + int(pct * 0.4)
-        _progress("Applying color grade...", mapped)
+        def ffmpeg_progress(pct):
+            # Map FFmpeg 0-100 to smart pipeline 50-90
+            mapped = 50 + int(pct * 0.4)
+            _progress("Applying color grade...", mapped)
 
-    apply_lut_to_video(
-        video_path, preset_path, output_path,
-        strength=strength, progress_callback=ffmpeg_progress,
-    )
-    steps.append({"step": "grading", "time": round(time.time() - step_start, 2)})
+        apply_lut_to_video(
+            video_path, preset_path, output_path,
+            strength=strength, progress_callback=ffmpeg_progress,
+        )
+        steps.append({"step": "grading", "time": round(time.time() - step_start, 2)})
+    else:
+        _progress("Skipping video encoding (LUT-only)...", 90)
 
     total_time = time.time() - start
 
     return {
-        "output_path": output_path,
+        "output_path": output_path if not lut_only else None,
         "mood_profile": mood_profile,
         "audio_analysis": {
             "has_audio": audio_features.get("has_audio", False),

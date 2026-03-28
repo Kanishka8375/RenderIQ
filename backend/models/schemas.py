@@ -22,6 +22,7 @@ class GradeRequest(BaseModel):
     mode: str = Field(pattern="^(preset|reference|smart)$")
     preset_name: str | None = None
     strength: float = Field(default=0.8, ge=0.0, le=1.0)
+    use_auto_strength: bool = False
     multi_scene: bool = False
     auto_wb: bool = False
     output_format: str = Field(default="both", pattern="^(video|lut|both)$")

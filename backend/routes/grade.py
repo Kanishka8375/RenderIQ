@@ -202,16 +202,20 @@ def _run_smart_grade_job(job_id: str, request: GradeRequest):
     work_dir = get_job_work_dir(job_id)
 
     try:
+        want_video = request.output_format in ("video", "both")
         graded_video_path = os.path.join(work_dir, "graded.mp4")
 
         def progress_cb(step_name, pct):
             job_manager.update_job(job_id, current_step=step_name, progress=pct)
 
+        strength_override = None if request.use_auto_strength else request.strength
+
         result = smart_grade(
             video_path=job.raw_path,
             output_path=graded_video_path,
-            strength_override=request.strength,
+            strength_override=strength_override,
             progress_callback=progress_cb,
+            lut_only=not want_video,
         )
 
         # Store smart grade analysis info
@@ -258,7 +262,7 @@ def _run_smart_grade_job(job_id: str, request: GradeRequest):
             progress=100,
             current_step="Complete",
             end_time=end_time,
-            graded_video_path=graded_video_path,
+            graded_video_path=graded_video_path if want_video else "",
             lut_path=lut_path,
             preview_path=preview_path,
             comparison_path=comparison_path,
