@@ -9,6 +9,7 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
   const [selectedPreset, setSelectedPreset] = useState(null);
   const [loading, setLoading] = useState(true);
   const [strength, setStrength] = useState(80);
+  const [useAutoStrength, setUseAutoStrength] = useState(true);
   const [multiScene, setMultiScene] = useState(false);
   const [autoWb, setAutoWb] = useState(false);
   const [outputFormat, setOutputFormat] = useState('both');
@@ -71,6 +72,7 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
         job_id: jobId,
         mode: 'smart',
         strength: strength / 100,
+        use_auto_strength: useAutoStrength,
         output_format: outputFormat,
       });
       return;
@@ -155,6 +157,24 @@ export default function StylePicker({ jobId, onStartGrade, onReferenceUploaded }
                 You can still adjust the strength slider below to fine-tune the result.
               </p>
             </div>
+
+            {/* Auto strength toggle */}
+            <label className="flex items-center justify-between cursor-pointer p-3 rounded-lg bg-[var(--color-surface)] border border-white/5">
+              <div>
+                <span className="text-sm font-medium">Auto strength</span>
+                <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                  {useAutoStrength
+                    ? 'AI picks the optimal intensity based on mood analysis'
+                    : 'Using manual strength from slider below'}
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={useAutoStrength}
+                onChange={(e) => setUseAutoStrength(e.target.checked)}
+                className="w-4 h-4 accent-[var(--color-primary)]"
+              />
+            </label>
           </div>
         </div>
       )}

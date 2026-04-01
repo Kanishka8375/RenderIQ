@@ -3,7 +3,10 @@
 import argparse
 import logging
 import os
+import shutil
+import subprocess
 import sys
+import webbrowser
 
 import cv2
 import numpy as np
@@ -157,6 +160,45 @@ def main() -> None:
         help="Generate all built-in preset .cube files",
     )
 
+    # --- smart command ---
+    smart_parser = subparsers.add_parser(
+        "smart", help="AI Smart Grade — auto-detect mood and apply best preset"
+    )
+    smart_parser.add_argument(
+        "--input", required=True, help="Raw footage video path"
+    )
+    smart_parser.add_argument(
+        "--output", required=True, help="Output graded video path"
+    )
+    smart_parser.add_argument(
+        "--strength", type=float, default=None,
+        help="Override strength 0.0-1.0 (default: AI decides)",
+    )
+    smart_parser.add_argument(
+        "--lut-only", action="store_true",
+        help="Only analyze and output the recommended LUT (skip video encoding)",
+    )
+
+    # --- serve command ---
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Launch the full-stack RenderIQ application (backend + frontend)",
+    )
+    serve_parser.add_argument(
+        "--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)"
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=8000, help="Bind port (default: 8000)"
+    )
+    serve_parser.add_argument(
+        "--no-browser", action="store_true",
+        help="Don't auto-open the browser",
+    )
+    serve_parser.add_argument(
+        "--build-frontend", action="store_true",
+        help="Force rebuild the frontend before serving",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -167,7 +209,9 @@ def main() -> None:
         datefmt="%H:%M:%S",
     )
 
-    if args.command == "lut":
+    if args.command == "serve":
+        _cmd_serve(args)
+    elif args.command == "lut":
         _cmd_lut(args)
     elif args.command == "grade":
         _cmd_grade(args)
@@ -177,6 +221,8 @@ def main() -> None:
         _cmd_preview(args)
     elif args.command == "presets":
         _cmd_presets(args)
+    elif args.command == "smart":
+        _cmd_smart(args)
 
 
 def _cmd_lut(args: argparse.Namespace) -> None:
@@ -332,6 +378,145 @@ def _cmd_presets(args: argparse.Namespace) -> None:
     print()
     print("Usage: python cli.py grade --input video.mp4 --preset <name> --output out.mp4")
     print("Generate all: python cli.py presets --generate")
+
+
+def _cmd_smart(args: argparse.Namespace) -> None:
+    validation = validate_video(args.input)
+    if validation is not True:
+        error = validation.get("error", "Invalid video") if isinstance(validation, dict) else "Invalid video"
+        print(f"Error: {error}", file=sys.stderr)
+        sys.exit(1)
+
+    from renderiq.smart_grade import smart_grade
+
+    lut_out = args.output
+    if args.lut_only:
+        lut_out = args.output if args.output.endswith(".cube") else args.output + ".cube"
+
+    def progress_cb(step, pct):
+        print(f"\r  [{pct:3d}%] {step}", end="", flush=True)
+
+    result = smart_grade(
+        video_path=args.input,
+        output_path=args.output,
+        strength_override=args.strength,
+        lut_only=args.lut_only,
+        progress_callback=progress_cb,
+    )
+    print()  # newline after progress
+
+    mood = result["mood_profile"]
+    grade = result["grade_applied"]
+    print(f"\n  Mood detected:  {mood['mood']}")
+    print(f"  Preset applied: {grade['preset']} at {grade['strength']:.0%} strength")
+    print(f"  Description:    {grade['description']}")
+
+    if args.lut_only:
+        # Export the preset as .cube
+        from renderiq.presets_builder import get_preset_path
+        preset_path = get_preset_path(grade["preset"])
+        shutil.copy2(preset_path, lut_out)
+        print(f"\n  LUT saved to:   {lut_out}")
+    else:
+        print(f"\n  Graded video:   {result['output_path']}")
+    print(f"  Processing time: {result['processing_time']:.1f}s")
+
+
+def _cmd_serve(args: argparse.Namespace) -> None:
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    frontend_dir = os.path.join(root_dir, "frontend")
+    frontend_dist = os.path.join(frontend_dir, "dist")
+
+    # Check system dependencies
+    if not shutil.which("ffmpeg"):
+        print("Error: ffmpeg not found. Install it first:", file=sys.stderr)
+        print("  Ubuntu/Debian: sudo apt install ffmpeg", file=sys.stderr)
+        print("  macOS:         brew install ffmpeg", file=sys.stderr)
+        sys.exit(1)
+
+    # Build frontend if needed
+    if args.build_frontend or not os.path.isdir(frontend_dist):
+        if not os.path.isfile(os.path.join(frontend_dir, "package.json")):
+            print("Warning: frontend/ not found. Running API-only mode.",
+                  file=sys.stderr)
+        else:
+            npm = shutil.which("npm")
+            if not npm:
+                print("Warning: npm not found. Skipping frontend build.",
+                      file=sys.stderr)
+                print("  Install Node.js 18+ for the web UI.", file=sys.stderr)
+            else:
+                print("Building frontend...")
+                node_modules = os.path.join(frontend_dir, "node_modules")
+                if not os.path.isdir(node_modules):
+                    print("  Installing frontend dependencies...")
+                    r = subprocess.run(
+                        [npm, "ci"], cwd=frontend_dir,
+                        capture_output=True, text=True,
+                    )
+                    if r.returncode != 0:
+                        # npm ci can fail if no lock file; fall back to npm install
+                        r = subprocess.run(
+                            [npm, "install"], cwd=frontend_dir,
+                            capture_output=True, text=True,
+                        )
+                        if r.returncode != 0:
+                            print(f"  npm install failed: {r.stderr[-300:]}", file=sys.stderr)
+                            sys.exit(1)
+
+                print("  Compiling frontend assets...")
+                r = subprocess.run(
+                    [npm, "run", "build"], cwd=frontend_dir,
+                    capture_output=True, text=True,
+                )
+                if r.returncode != 0:
+                    print(f"  Build failed: {r.stderr[-300:]}", file=sys.stderr)
+                    sys.exit(1)
+                print("  Frontend built successfully.")
+
+    # Generate presets if needed
+    from renderiq.presets_builder import PRESETS_DIR
+    if not os.path.isdir(PRESETS_DIR) or len(os.listdir(PRESETS_DIR)) < 10:
+        print("Generating built-in presets...")
+        generate_all_presets()
+
+    # Create working directories
+    for d in ["uploads", "jobs", "output"]:
+        os.makedirs(os.path.join(root_dir, d), exist_ok=True)
+
+    host = args.host
+    port = args.port
+    display_host = "localhost" if host == "0.0.0.0" else host
+    url = f"http://{display_host}:{port}"
+
+    print(f"""
+╔══════════════════════════════════════════╗
+║          RenderIQ v1.0.0                 ║
+║   AI Color Grade Transfer Tool           ║
+╠══════════════════════════════════════════╣
+║                                          ║
+║   App running at: {url:<21s} ║
+║   API docs:       {url + '/api/docs':<21s} ║
+║                                          ║
+║   Press Ctrl+C to stop                   ║
+╚══════════════════════════════════════════╝
+""")
+
+    # Open browser
+    if not args.no_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    # Launch uvicorn
+    import uvicorn
+    uvicorn.run(
+        "backend.main:app",
+        host=host,
+        port=port,
+        log_level="info",
+    )
 
 
 if __name__ == "__main__":
