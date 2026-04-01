@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "renderiq"
+version = "1.0.0"
+description = "AI Color Grade Transfer Tool — full-stack video grading application"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    # Core grading engine
+    "opencv-python>=4.8.0,<5.0",
+    "numpy>=1.24.0,<3.0",
+    "scipy>=1.11.0,<2.0",
+    "scikit-learn>=1.3.0,<2.0",
+    "colour-science>=0.4.0,<1.0",
+    "tqdm>=4.65.0,<5.0",
+    "Pillow>=10.0.0,<12.0",
+    "scenedetect[opencv]>=0.6.0,<1.0",
+    # Backend API
+    "fastapi>=0.100.0,<1.0",
+    "uvicorn[standard]>=0.23.0,<1.0",
+    "python-multipart>=0.0.6,<1.0",
+    "aiofiles>=23.0.0,<25.0",
+    "slowapi>=0.1.9,<1.0",
+    # Audio analysis
+    "librosa>=0.10.0,<1.0",
+    "soundfile>=0.12.0,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-timeout>=2.0",
+    "httpx>=0.24.0",
+]
+prod = [
+    "gunicorn>=21.2.0,<24.0",
+]
+
+[project.scripts]
+renderiq = "cli:main"
+
+[tool.setuptools.packages.find]
+include = ["renderiq*", "backend*"]
+
+[tool.setuptools]
+py-modules = ["cli"]
