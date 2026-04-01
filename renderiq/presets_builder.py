@@ -92,9 +92,22 @@ def get_preset_path(name: str) -> str:
         raise ValueError(f"Unknown preset '{name}'. Available: {available}")
 
     cube_path = os.path.join(PRESETS_DIR, f"{name}.cube")
-    if not os.path.isfile(cube_path):
+    if not os.path.isfile(cube_path) or _lut_size_too_small(cube_path):
         generate_preset(name)
     return cube_path
+
+
+def _lut_size_too_small(cube_path: str, min_size: int = 17) -> bool:
+    """Check if an existing .cube file has a grid size below the minimum."""
+    try:
+        with open(cube_path) as f:
+            for line in f:
+                if line.startswith("LUT_3D_SIZE"):
+                    size = int(line.split()[1])
+                    return size < min_size
+        return True  # No size header found — regenerate
+    except (OSError, ValueError):
+        return True
 
 
 def generate_all_presets(size: int = 33) -> list[str]:

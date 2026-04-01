@@ -96,8 +96,9 @@ if [ "$HAS_NODE" = true ] && [ -f "frontend/package.json" ]; then
 fi
 
 # ─── Generate presets ─────────────────────────────────────────────────────────
-log "Generating built-in presets..."
-python3 -c "from renderiq.presets_builder import generate_all_presets; generate_all_presets()" 2>/dev/null
+log "Generating built-in presets (33x33x33 LUTs)..."
+rm -f presets/builtin/*.cube 2>/dev/null
+python3 -c "from renderiq.presets_builder import generate_all_presets; generate_all_presets(size=33)" 2>/dev/null
 log "  10 presets generated ✓"
 
 # ─── Create working directories ──────────────────────────────────────────────
