@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, FileDown, RotateCcw, Loader2 } from 'lucide-react';
+import { Download, FileDown, RotateCcw, Loader2, FileText, Image } from 'lucide-react';
 import { api } from '../api/client';
 
 function useDownload() {
@@ -28,13 +28,18 @@ function useDownload() {
   return { download, downloading };
 }
 
-export default function DownloadPanel({ jobId, result, onReset }) {
+export default function DownloadPanel({ jobId, result, onReset, aiInfo }) {
   const { download, downloading } = useDownload();
 
   if (!result) return null;
 
+  const isAIEdit = aiInfo?.mode === 'ai_edit';
+  const hasSrt = isAIEdit && aiInfo?.steps_completed?.includes('auto_captions');
+  const hasThumbnail = isAIEdit && aiInfo?.steps_completed?.includes('thumbnail');
+
   return (
     <div className="space-y-4">
+      {/* Primary downloads */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {result.graded_video_url && (
           <button
@@ -81,12 +86,48 @@ export default function DownloadPanel({ jobId, result, onReset }) {
         )}
       </div>
 
+      {/* AI Edit extra downloads */}
+      {(hasSrt || hasThumbnail) && (
+        <div className="grid grid-cols-2 gap-2">
+          {hasSrt && (
+            <button
+              onClick={() =>
+                download(
+                  api.getDownloadUrl(jobId, 'srt'),
+                  'renderiq_captions.srt'
+                )
+              }
+              disabled={!!downloading}
+              className="flex items-center justify-center gap-2 py-2.5 rounded-lg border border-white/10 hover:border-white/20 hover:bg-white/5 text-sm transition-all disabled:opacity-60"
+            >
+              <FileText size={14} />
+              Download SRT
+            </button>
+          )}
+          {hasThumbnail && (
+            <button
+              onClick={() =>
+                download(
+                  api.getDownloadUrl(jobId, 'thumbnail'),
+                  'renderiq_thumbnail.jpg'
+                )
+              }
+              disabled={!!downloading}
+              className="flex items-center justify-center gap-2 py-2.5 rounded-lg border border-white/10 hover:border-white/20 hover:bg-white/5 text-sm transition-all disabled:opacity-60"
+            >
+              <Image size={14} />
+              Download Thumbnail
+            </button>
+          )}
+        </div>
+      )}
+
       <button
         onClick={onReset}
         className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 hover:border-white/20 hover:bg-white/5 text-[var(--color-text-secondary)] hover:text-white transition-all text-sm"
       >
         <RotateCcw size={16} />
-        Grade Another Video
+        {isAIEdit ? 'Edit Another Video' : 'Grade Another Video'}
       </button>
     </div>
   );

@@ -38,6 +38,8 @@ class JobInfo:
     preview_path: str = ""
     comparison_path: str = ""
     smart_grade_info: str = ""  # JSON-encoded smart grade analysis
+    srt_path: str = ""
+    thumbnail_path: str = ""
     duration: float = 0
     width: int = 0
     height: int = 0

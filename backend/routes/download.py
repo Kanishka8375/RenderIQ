@@ -91,3 +91,43 @@ async def download_comparison(job_id: str):
         media_type="image/png",
         filename="renderiq_comparison.png",
     )
+
+
+@router.get("/{job_id}/srt")
+async def download_srt(job_id: str):
+    """Serve the auto-generated SRT subtitles file."""
+    job = job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Job not completed yet")
+
+    if not job.srt_path or not os.path.isfile(job.srt_path):
+        raise HTTPException(status_code=404, detail="SRT file not available")
+
+    return FileResponse(
+        job.srt_path,
+        media_type="text/plain",
+        filename="renderiq_captions.srt",
+    )
+
+
+@router.get("/{job_id}/thumbnail")
+async def download_thumbnail(job_id: str):
+    """Serve the auto-generated thumbnail."""
+    job = job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Job not completed yet")
+
+    if not job.thumbnail_path or not os.path.isfile(job.thumbnail_path):
+        raise HTTPException(status_code=404, detail="Thumbnail not available")
+
+    return FileResponse(
+        job.thumbnail_path,
+        media_type="image/jpeg",
+        filename="renderiq_thumbnail.jpg",
+    )

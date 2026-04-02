@@ -108,4 +108,27 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: jobId, rating, comment }),
     }).then((r) => r.json()),
+
+  // AI Editor endpoints
+  startAIEdit: (jobId, prompt) =>
+    fetch(`${API_BASE}/api/ai-edit/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, prompt }),
+    }).then((r) => {
+      if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'AI edit failed'); });
+      return r.json();
+    }),
+
+  getAISuggestions: () =>
+    fetch(`${API_BASE}/api/ai-edit/suggestions`).then((r) => {
+      if (!r.ok) throw new Error('Failed to load suggestions');
+      return r.json();
+    }),
+
+  parsePromptPreview: (prompt) =>
+    fetch(`${API_BASE}/api/ai-edit/parse?prompt=${encodeURIComponent(prompt)}`).then((r) => {
+      if (!r.ok) throw new Error('Parse failed');
+      return r.json();
+    }),
 };
