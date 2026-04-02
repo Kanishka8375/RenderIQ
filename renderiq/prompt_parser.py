@@ -24,6 +24,14 @@ MULTI_WORD_KEYWORDS = [
         "enhancement": True, "scene_detection": True, "smart_cuts": True,
         "transitions": True, "auto_zoom": True, "speed_ramp": True,
     }),
+    ("cinematic edit", {
+        "enhancement": True, "scene_detection": True, "smart_cuts": True,
+        "transitions": True, "auto_zoom": True, "speed_ramp": True,
+    }),
+    ("full cinematic", {
+        "enhancement": True, "scene_detection": True, "smart_cuts": True,
+        "transitions": True, "auto_zoom": True, "speed_ramp": True,
+    }),
     ("professional edit", {
         "enhancement": True, "transitions": True, "auto_zoom": True,
         "captions": True, "caption_style": "bold",
