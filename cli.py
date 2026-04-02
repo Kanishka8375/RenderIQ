@@ -486,6 +486,24 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
     host = args.host
     port = args.port
+
+    # Check if port is already in use and find a free one
+    import socket
+    original_port = port
+    for attempt in range(10):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+                break  # port is free
+            except OSError:
+                if attempt == 0 and port == original_port:
+                    print(f"  Port {port} is already in use, finding a free port...")
+                port += 1
+    else:
+        print(f"Error: Could not find a free port (tried {original_port}-{port})",
+              file=sys.stderr)
+        sys.exit(1)
+
     display_host = "localhost" if host == "0.0.0.0" else host
     url = f"http://{display_host}:{port}"
 

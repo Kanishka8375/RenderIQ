@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.config import config
 from backend.services.storage import ensure_dirs
 from backend.services.job_manager import job_manager
-from backend.routes import upload, grade, presets, download, admin
+from backend.routes import upload, grade, presets, download, admin, ai_edit
 
 logger = logging.getLogger("renderiq.api")
 
@@ -133,6 +133,7 @@ app.include_router(grade.router)
 app.include_router(presets.router)
 app.include_router(download.router)
 app.include_router(admin.router)
+app.include_router(ai_edit.router)
 
 
 @app.get("/api/health")

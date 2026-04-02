@@ -96,8 +96,9 @@ if [ "$HAS_NODE" = true ] && [ -f "frontend/package.json" ]; then
 fi
 
 # ─── Generate presets ─────────────────────────────────────────────────────────
-log "Generating built-in presets..."
-python3 -c "from renderiq.presets_builder import generate_all_presets; generate_all_presets()" 2>/dev/null
+log "Generating built-in presets (33x33x33 LUTs)..."
+rm -f presets/builtin/*.cube 2>/dev/null
+python3 -c "from renderiq.presets_builder import generate_all_presets; generate_all_presets(size=33)" 2>/dev/null
 log "  10 presets generated ✓"
 
 # ─── Create working directories ──────────────────────────────────────────────
@@ -105,21 +106,20 @@ mkdir -p uploads jobs output
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║  ${GREEN}RenderIQ installed successfully!${CYAN}               ║${NC}"
-echo -e "${CYAN}╠══════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║                                                  ║${NC}"
-echo -e "${CYAN}║${NC}  Launch the full app:                            ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}    ${GREEN}renderiq serve${NC}                                 ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}                                                  ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  CLI commands:                                   ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}    ${GREEN}renderiq smart${NC}  --input v.mp4 --output out.mp4 ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}    ${GREEN}renderiq grade${NC}  --input v.mp4 --preset ...     ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}    ${GREEN}renderiq presets${NC} --list                        ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}                                                  ${CYAN}║${NC}"
-if [ -z "${VIRTUAL_ENV:-}" ]; then
-echo -e "${CYAN}║${NC}  ${YELLOW}Activate venv first: source .venv/bin/activate${NC}  ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}                                                  ${CYAN}║${NC}"
-fi
-echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║  ${GREEN}RenderIQ installed successfully!${CYAN}                   ║${NC}"
+echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${NC}"
+echo -e "${CYAN}║                                                      ║${NC}"
+echo -e "${CYAN}║${NC}  Launch the full app (no venv activation needed):   ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}    ${GREEN}./run.sh serve${NC}                                    ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}                                                      ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  CLI commands:                                       ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}    ${GREEN}./run.sh smart${NC}  --input v.mp4 --output out.mp4   ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}    ${GREEN}./run.sh grade${NC}  --input v.mp4 --preset ...       ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}    ${GREEN}./run.sh presets${NC} --list                          ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}                                                      ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  Or activate venv for global 'renderiq' command:    ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}    ${YELLOW}source .venv/bin/activate && renderiq serve${NC}      ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}                                                      ${CYAN}║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
 echo ""
