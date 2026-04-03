@@ -6,9 +6,13 @@ import os
 import sys
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from backend.config import config
+
+limiter = Limiter(key_func=get_remote_address)
 from backend.models.schemas import GradeRequest, GradeStartResponse, GradeStatusResponse
 from backend.services.job_manager import job_manager
 from backend.services.storage import get_job_work_dir
@@ -168,9 +172,10 @@ def _run_grade_job(job_id: str, request: GradeRequest):
     except Exception as e:
         logger.exception("Grading failed for job %s", job_id)
         end_time = time.time()
+        error_msg = str(e) if config.DEBUG else "Processing failed. Please try again."
         job_manager.update_job(
-            job_id, status="failed", error=str(e),
-            current_step=f"Error: {e}", end_time=end_time,
+            job_id, status="failed", error=error_msg,
+            current_step=error_msg, end_time=end_time,
         )
         try:
             from backend.routes.admin import log_job_analytics
@@ -285,18 +290,21 @@ def _run_smart_grade_job(job_id: str, request: GradeRequest):
     except Exception as e:
         logger.exception("Smart grading failed for job %s", job_id)
         end_time = time.time()
+        error_msg = str(e) if config.DEBUG else "Processing failed. Please try again."
         job_manager.update_job(
-            job_id, status="failed", error=str(e),
-            current_step=f"Error: {e}", end_time=end_time,
+            job_id, status="failed", error=error_msg,
+            current_step=error_msg, end_time=end_time,
         )
 
 
 @router.post("/start", response_model=GradeStartResponse)
 async def start_grade(request: GradeRequest):
     """Start a grading job in the background."""
+    if not config.JOB_ID_PATTERN.match(request.job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
     job = job_manager.get_job(request.job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if not job.raw_path or not os.path.isfile(job.raw_path):
         raise HTTPException(status_code=400, detail="Raw footage not uploaded yet")
@@ -334,9 +342,11 @@ async def regrade(request: GradeRequest):
     Reuses the existing raw footage — no re-upload needed.
     Resets the job status and starts a fresh grading pass.
     """
+    if not config.JOB_ID_PATTERN.match(request.job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
     job = job_manager.get_job(request.job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status in ("processing", "queued"):
         raise HTTPException(
@@ -385,9 +395,12 @@ async def regrade(request: GradeRequest):
 
 
 @router.get("/status/{job_id}")
-async def get_status(job_id: str):
+@limiter.limit("120/minute")
+async def get_status(request: Request, job_id: str):
     """Get current job status."""
+    if not config.JOB_ID_PATTERN.match(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
     status = job_manager.get_status(job_id)
     if status is None:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
     return status

@@ -134,13 +134,16 @@ async def recommend_preset(job_id: str, top_n: int = 3):
 
     Returns ranked list of preset recommendations with scores and reasons.
     """
+    from backend.config import config
     from backend.services.job_manager import job_manager
     from renderiq.sampler import extract_keyframes
     from renderiq.auto_recommend import analyze_video_characteristics, recommend_presets
 
+    if not config.JOB_ID_PATTERN.match(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if not job.raw_path or not os.path.isfile(job.raw_path):
         raise HTTPException(status_code=400, detail="Raw footage not uploaded yet")

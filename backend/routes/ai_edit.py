@@ -120,9 +120,10 @@ def _run_ai_edit_job(job_id: str, prompt: str):
     except Exception as e:
         logger.exception("AI edit failed for job %s", job_id)
         end_time = time.time()
+        error_msg = str(e) if config.DEBUG else "Processing failed. Please try again."
         job_manager.update_job(
-            job_id, status="failed", error=str(e),
-            current_step=f"Error: {e}", end_time=end_time,
+            job_id, status="failed", error=error_msg,
+            current_step=error_msg, end_time=end_time,
         )
 
 
@@ -131,9 +132,11 @@ def _run_ai_edit_job(job_id: str, prompt: str):
 @router.post("/start", response_model=AIEditResponse)
 async def start_ai_edit(request: AIEditRequest):
     """Start an AI edit job from a natural language prompt."""
+    if not config.JOB_ID_PATTERN.match(request.job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
     job = job_manager.get_job(request.job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if not job.raw_path or not os.path.isfile(job.raw_path):
         raise HTTPException(status_code=400, detail="Raw footage not uploaded yet")

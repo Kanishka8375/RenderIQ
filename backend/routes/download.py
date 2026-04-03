@@ -1,6 +1,7 @@
 """File download endpoints."""
 
 import os
+import re
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/api/download", tags=["download"])
 # Directories where served files are allowed to reside
 _ALLOWED_ROOTS = tuple(
     os.path.realpath(d)
-    for d in (config.UPLOAD_DIR, config.OUTPUT_DIR, config.JOBS_DIR)
+    for d in (config.UPLOAD_DIR, config.OUTPUT_DIR, config.JOBS_DIR, config.PRESETS_DIR)
 )
 
 
@@ -25,12 +26,24 @@ def _validate_path(path: str) -> str:
     return real
 
 
+def _validate_job_id(job_id: str) -> None:
+    """Reject job IDs that don't match the expected hex pattern."""
+    if not config.JOB_ID_PATTERN.match(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+
+
+def _sanitize_filename(name: str) -> str:
+    """Strip unsafe characters from a filename component."""
+    return re.sub(r'[^\w.\-]', '_', name)
+
+
 @router.get("/{job_id}/video")
 async def download_video(job_id: str):
     """Serve the graded video file."""
+    _validate_job_id(job_id)
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job not completed yet")
@@ -39,7 +52,7 @@ async def download_video(job_id: str):
         raise HTTPException(status_code=404, detail="Graded video not available")
 
     safe_path = _validate_path(job.graded_video_path)
-    base_name = os.path.splitext(job.raw_filename)[0]
+    base_name = _sanitize_filename(os.path.splitext(job.raw_filename)[0])
     download_name = f"renderiq_graded_{base_name}.mp4"
 
     return FileResponse(
@@ -52,9 +65,10 @@ async def download_video(job_id: str):
 @router.get("/{job_id}/lut")
 async def download_lut(job_id: str):
     """Serve the .cube LUT file."""
+    _validate_job_id(job_id)
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job not completed yet")
@@ -73,9 +87,10 @@ async def download_lut(job_id: str):
 @router.get("/{job_id}/preview")
 async def download_preview(job_id: str):
     """Serve a single graded frame as PNG."""
+    _validate_job_id(job_id)
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job not completed yet")
@@ -94,9 +109,10 @@ async def download_preview(job_id: str):
 @router.get("/{job_id}/comparison")
 async def download_comparison(job_id: str):
     """Serve the before/after comparison image as PNG."""
+    _validate_job_id(job_id)
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job not completed yet")
@@ -115,9 +131,10 @@ async def download_comparison(job_id: str):
 @router.get("/{job_id}/srt")
 async def download_srt(job_id: str):
     """Serve the auto-generated SRT subtitles file."""
+    _validate_job_id(job_id)
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job not completed yet")
@@ -136,9 +153,10 @@ async def download_srt(job_id: str):
 @router.get("/{job_id}/thumbnail")
 async def download_thumbnail(job_id: str):
     """Serve the auto-generated thumbnail."""
+    _validate_job_id(job_id)
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job not completed yet")

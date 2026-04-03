@@ -140,6 +140,8 @@ def _save_feedback(entries: list[dict]):
 
 @router.post("/feedback")
 async def submit_feedback(req: FeedbackRequest):
+    if not config.JOB_ID_PATTERN.match(req.job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
     entries = _load_feedback()
     entries.append({
         "job_id": req.job_id,

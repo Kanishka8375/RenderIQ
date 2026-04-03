@@ -101,7 +101,9 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
 
 
 @router.post("/reference", response_model=ReferenceUploadResponse)
+@limiter.limit(config.RATE_LIMIT_UPLOADS)
 async def upload_reference(
+    request: Request,
     job_id: str = Form(...),
     file: UploadFile = File(...),
 ):

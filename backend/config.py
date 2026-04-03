@@ -2,6 +2,7 @@
 
 import os
 import re
+import secrets
 import sys
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -40,7 +41,9 @@ class Config:
     # Production settings
     ENV = os.environ.get("RENDERIQ_ENV", "development")
     DEBUG = ENV != "production"
-    ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY", "renderiq-dev-key" if ENV != "production" else "")
+    ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY") or (
+        secrets.token_hex(16) if ENV != "production" else ""
+    )
     ALLOWED_ORIGINS = (
         ["*"] if ENV != "production"
         else [

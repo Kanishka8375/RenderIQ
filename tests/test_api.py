@@ -162,13 +162,13 @@ class TestGradeEndpoints:
         assert resp.status_code == 200
 
     def test_start_grade_invalid_job(self, client):
-        """POST /api/grade/start with invalid job_id returns 404."""
+        """POST /api/grade/start with invalid job_id returns 400 (bad format)."""
         resp = client.post("/api/grade/start", json={
             "job_id": "nonexistent",
             "mode": "preset",
             "preset_name": "cinematic_warm",
         })
-        assert resp.status_code == 404
+        assert resp.status_code == 400
 
     def test_status_valid_job(self, client, uploaded_job):
         """GET /api/grade/status with valid job_id returns 200."""
@@ -187,9 +187,9 @@ class TestGradeEndpoints:
         assert "progress" in data
 
     def test_status_invalid_job(self, client):
-        """GET /api/grade/status with invalid job_id returns 404."""
+        """GET /api/grade/status with invalid job_id returns 400 (bad format)."""
         resp = client.get("/api/grade/status/nonexistent")
-        assert resp.status_code == 404
+        assert resp.status_code == 400
 
 
 class TestDownloadEndpoints:

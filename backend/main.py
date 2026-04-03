@@ -101,7 +101,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Request logging middleware
+# Request logging + security headers middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.time()
@@ -115,6 +115,13 @@ async def log_requests(request: Request, call_next):
         duration,
         response.status_code,
     )
+    # Security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if not config.DEBUG:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'"
     return response
 
 
