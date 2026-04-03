@@ -48,7 +48,9 @@ def ai_edit(
         try:
             from renderiq.audio_cleaner import clean_audio
             cleaned_path = os.path.join(output_dir, "audio_cleaned.mp4")
-            current_video = clean_audio(current_video, cleaned_path, progress_callback=cb)
+            result_path = clean_audio(current_video, cleaned_path, progress_callback=cb)
+            if result_path and os.path.exists(result_path) and os.path.getsize(result_path) > 100:
+                current_video = result_path
             steps_completed.append("audio_clean")
             step_details["audio_clean"] = "Noise removed, volume normalized"
         except Exception as e:
@@ -59,7 +61,9 @@ def ai_edit(
         try:
             from renderiq.enhancer import enhance_video
             enhanced_path = os.path.join(output_dir, "enhanced.mp4")
-            current_video = enhance_video(current_video, enhanced_path, progress_callback=cb)
+            result_path = enhance_video(current_video, enhanced_path, progress_callback=cb)
+            if result_path and os.path.exists(result_path) and os.path.getsize(result_path) > 100:
+                current_video = result_path
             steps_completed.append("enhancement")
             step_details["enhancement"] = "Exposure + contrast fixed"
         except Exception as e:
@@ -135,12 +139,14 @@ def ai_edit(
         try:
             from renderiq.speed_ramper import apply_speed_ramp
             speed_path = os.path.join(output_dir, "speed_ramped.mp4")
-            current_video = apply_speed_ramp(
+            result_path = apply_speed_ramp(
                 current_video, scenes,
                 pacing=edit_plan.get("pacing", "medium"),
                 output_path=speed_path,
                 progress_callback=cb,
             )
+            if result_path and os.path.exists(result_path) and os.path.getsize(result_path) > 100:
+                current_video = result_path
             speed_changes = sum(1 for s in scenes if s.get("applied_speed", 1.0) != 1.0)
             steps_completed.append("speed_ramp")
             step_details["speed_ramp"] = f"{speed_changes} scenes speed-adjusted"
@@ -152,12 +158,14 @@ def ai_edit(
         try:
             from renderiq.transitions import add_transitions
             trans_path = os.path.join(output_dir, "transitions.mp4")
-            current_video = add_transitions(
+            result_path = add_transitions(
                 current_video, scenes,
                 pacing=edit_plan.get("pacing", "medium"),
                 output_path=trans_path,
                 progress_callback=cb,
             )
+            if result_path and os.path.exists(result_path) and os.path.getsize(result_path) > 100:
+                current_video = result_path
             steps_completed.append("transitions")
             step_details["transitions"] = f"{max(0, len(scenes)-1)} crossfades added"
         except Exception as e:
@@ -201,10 +209,12 @@ def ai_edit(
         try:
             from renderiq.auto_zoom import apply_auto_zoom
             zoom_path = os.path.join(output_dir, "zoomed.mp4")
-            current_video = apply_auto_zoom(
+            result_path = apply_auto_zoom(
                 current_video, scenes, face_data=face_data,
                 output_path=zoom_path, progress_callback=cb,
             )
+            if result_path and os.path.exists(result_path) and os.path.getsize(result_path) > 100:
+                current_video = result_path
             steps_completed.append("auto_zoom")
             step_details["auto_zoom"] = "Ken Burns zoom effects applied"
         except Exception as e:
@@ -216,11 +226,13 @@ def ai_edit(
             from renderiq.reframer import reframe_video
             reframe_path = os.path.join(output_dir, "reframed.mp4")
             target = edit_plan.get("reframe_ratio", "portrait")
-            current_video = reframe_video(
+            result_path = reframe_video(
                 current_video, target_ratio=target,
                 face_data=face_data, output_path=reframe_path,
                 progress_callback=cb,
             )
+            if result_path and os.path.exists(result_path) and os.path.getsize(result_path) > 100:
+                current_video = result_path
             steps_completed.append("reframe")
             step_details["reframe"] = f"Reframed to {target}"
         except Exception as e:
@@ -256,13 +268,15 @@ def ai_edit(
         try:
             from renderiq.text_overlay import add_text_overlays
             titled_path = os.path.join(output_dir, "titled.mp4")
-            current_video = add_text_overlays(
+            result_path = add_text_overlays(
                 current_video, titled_path,
                 title=edit_plan.get("title"),
                 subtitle=edit_plan.get("subtitle"),
                 end_text=edit_plan.get("end_text"),
                 progress_callback=cb,
             )
+            if result_path and os.path.exists(result_path) and os.path.getsize(result_path) > 100:
+                current_video = result_path
             steps_completed.append("text_overlays")
             step_details["text_overlays"] = "Title/end card added"
         except Exception as e:

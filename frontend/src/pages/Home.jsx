@@ -27,7 +27,7 @@ export default function Home() {
   const [showTool, setShowTool] = useState(false);
   const [step, setStep] = useState(1);
   const [jobId, setJobId] = useState(null);
-  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackDismissed, setFeedbackDismissed] = useState(false);
   const [hasGraded, setHasGraded] = useState(false);
   const [editMode, setEditMode] = useState('preset'); // 'preset' or 'ai'
   const upload = useUpload();
@@ -98,7 +98,7 @@ export default function Home() {
     job.stopPolling();
     setStep(1);
     setJobId(null);
-    setShowFeedback(false);
+    setFeedbackDismissed(false);
     setHasGraded(false);
     setEditMode('preset');
   }, [upload, job]);
@@ -107,7 +107,7 @@ export default function Home() {
   const isCompleted = step === 3 && job.status === 'completed';
   const isFailed = step === 3 && job.status === 'failed';
 
-  const shouldShowFeedback = isCompleted && !showFeedback;
+  const shouldShowFeedback = isCompleted && !feedbackDismissed;
 
   // Parse AI info from smart_grade_info
   let aiInfo = null;
@@ -274,7 +274,7 @@ export default function Home() {
                         )}
                         <StylePicker
                           jobId={jobId}
-                          onStartGrade={hasGraded ? handleRegrade : handleStartGrade}
+                          onStartGrade={hasGraded && editMode === 'preset' ? handleRegrade : handleStartGrade}
                           onReferenceUploaded={() => {}}
                         />
                       </div>
@@ -418,7 +418,7 @@ export default function Home() {
       {shouldShowFeedback && (
         <FeedbackPopup
           jobId={jobId}
-          onClose={() => setShowFeedback(true)}
+          onClose={() => setFeedbackDismissed(true)}
         />
       )}
     </div>

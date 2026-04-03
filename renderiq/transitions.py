@@ -67,24 +67,29 @@ def add_transitions(
 
     # Apply xfade transitions sequentially
     current = scene_clips[0]
+    merged_temps = []
 
     for i in range(1, len(scene_clips)):
         next_clip = scene_clips[i]
         temp_output = os.path.join(temp_dir, f"trans_merged_{i:04d}.mp4")
 
         current_duration = _get_clip_duration(current)
-        offset = max(0, current_duration - trans_duration)
+        # Clamp transition duration to half of shortest clip to avoid negative offset
+        effective_trans = min(trans_duration, current_duration / 2)
+        next_duration = _get_clip_duration(next_clip)
+        effective_trans = min(effective_trans, next_duration / 2)
+        offset = max(0, current_duration - effective_trans)
 
         transition = _select_transition(scenes[i] if i < len(scenes) else None)
 
         if transition == "fade_black":
-            xfade = f"xfade=transition=fade:duration={trans_duration}:offset={offset}"
+            xfade = f"xfade=transition=fade:duration={effective_trans}:offset={offset}"
         elif transition == "fade_white":
-            xfade = f"xfade=transition=wiperight:duration={trans_duration}:offset={offset}"
+            xfade = f"xfade=transition=wiperight:duration={effective_trans}:offset={offset}"
         else:
-            xfade = f"xfade=transition=fade:duration={trans_duration}:offset={offset}"
+            xfade = f"xfade=transition=fade:duration={effective_trans}:offset={offset}"
 
-        acrossfade = f"acrossfade=d={trans_duration}"
+        acrossfade = f"acrossfade=d={effective_trans}"
 
         cmd = [
             "ffmpeg", "-y",
@@ -102,6 +107,7 @@ def add_transitions(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
         if result.returncode == 0 and os.path.exists(temp_output):
+            merged_temps.append(current)
             current = temp_output
         else:
             logger.warning("Transition %d failed, skipping", i)
@@ -111,10 +117,17 @@ def add_transitions(
     else:
         shutil.copy2(video_path, output_path)
 
-    # Cleanup
-    for clip in scene_clips:
+    # Cleanup scene clips and merged temp files
+    for clip in scene_clips + merged_temps:
         try:
-            os.remove(clip)
+            if os.path.exists(clip):
+                os.remove(clip)
+        except OSError:
+            pass
+    # Clean the final merged temp (now copied to output_path)
+    if current != output_path and current not in scene_clips:
+        try:
+            os.remove(current)
         except OSError:
             pass
 

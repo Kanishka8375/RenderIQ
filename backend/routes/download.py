@@ -5,9 +5,24 @@ import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from backend.config import config
 from backend.services.job_manager import job_manager
 
 router = APIRouter(prefix="/api/download", tags=["download"])
+
+# Directories where served files are allowed to reside
+_ALLOWED_ROOTS = tuple(
+    os.path.realpath(d)
+    for d in (config.UPLOAD_DIR, config.OUTPUT_DIR, config.JOBS_DIR)
+)
+
+
+def _validate_path(path: str) -> str:
+    """Resolve the path and ensure it lives under an allowed root directory."""
+    real = os.path.realpath(path)
+    if not any(real.startswith(root + os.sep) or real == root for root in _ALLOWED_ROOTS):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return real
 
 
 @router.get("/{job_id}/video")
@@ -23,11 +38,12 @@ async def download_video(job_id: str):
     if not job.graded_video_path or not os.path.isfile(job.graded_video_path):
         raise HTTPException(status_code=404, detail="Graded video not available")
 
+    safe_path = _validate_path(job.graded_video_path)
     base_name = os.path.splitext(job.raw_filename)[0]
     download_name = f"renderiq_graded_{base_name}.mp4"
 
     return FileResponse(
-        job.graded_video_path,
+        safe_path,
         media_type="video/mp4",
         filename=download_name,
     )
@@ -46,8 +62,9 @@ async def download_lut(job_id: str):
     if not job.lut_path or not os.path.isfile(job.lut_path):
         raise HTTPException(status_code=404, detail="LUT file not available")
 
+    safe_path = _validate_path(job.lut_path)
     return FileResponse(
-        job.lut_path,
+        safe_path,
         media_type="application/octet-stream",
         filename="renderiq_grade.cube",
     )
@@ -66,8 +83,9 @@ async def download_preview(job_id: str):
     if not job.preview_path or not os.path.isfile(job.preview_path):
         raise HTTPException(status_code=404, detail="Preview not available")
 
+    safe_path = _validate_path(job.preview_path)
     return FileResponse(
-        job.preview_path,
+        safe_path,
         media_type="image/png",
         filename="renderiq_preview.png",
     )
@@ -86,8 +104,9 @@ async def download_comparison(job_id: str):
     if not job.comparison_path or not os.path.isfile(job.comparison_path):
         raise HTTPException(status_code=404, detail="Comparison not available")
 
+    safe_path = _validate_path(job.comparison_path)
     return FileResponse(
-        job.comparison_path,
+        safe_path,
         media_type="image/png",
         filename="renderiq_comparison.png",
     )
@@ -106,8 +125,9 @@ async def download_srt(job_id: str):
     if not job.srt_path or not os.path.isfile(job.srt_path):
         raise HTTPException(status_code=404, detail="SRT file not available")
 
+    safe_path = _validate_path(job.srt_path)
     return FileResponse(
-        job.srt_path,
+        safe_path,
         media_type="text/plain",
         filename="renderiq_captions.srt",
     )
@@ -126,8 +146,9 @@ async def download_thumbnail(job_id: str):
     if not job.thumbnail_path or not os.path.isfile(job.thumbnail_path):
         raise HTTPException(status_code=404, detail="Thumbnail not available")
 
+    safe_path = _validate_path(job.thumbnail_path)
     return FileResponse(
-        job.thumbnail_path,
+        safe_path,
         media_type="image/jpeg",
         filename="renderiq_thumbnail.jpg",
     )
