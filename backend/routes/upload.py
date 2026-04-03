@@ -22,6 +22,50 @@ from renderiq.utils import get_video_info, validate_video, SUPPORTED_FORMATS
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
+# Known video container magic bytes / signatures
+_VIDEO_SIGNATURES = [
+    (b'\x00\x00\x00', 3, b'ftyp'),    # MP4/MOV (offset 4)
+    (b'\x1a\x45\xdf\xa3', 0, None),    # MKV/WebM (EBML)
+    (b'RIFF', 0, b'AVI '),              # AVI (RIFF....AVI )
+    (b'\x00\x00\x01\xba', 0, None),    # MPEG-PS
+    (b'\x00\x00\x01\xb3', 0, None),    # MPEG-1/2
+    (b'\x47', 0, None),                 # MPEG-TS (sync byte)
+]
+
+
+def _check_video_magic(file_path: str) -> bool:
+    """Fast check that file header looks like a video container."""
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(32)
+    except OSError:
+        return False
+
+    if len(header) < 12:
+        return False
+
+    # MP4/MOV: bytes 4-7 should be 'ftyp'
+    if header[4:8] == b'ftyp':
+        return True
+
+    # MKV/WebM: EBML header
+    if header[:4] == b'\x1a\x45\xdf\xa3':
+        return True
+
+    # AVI: RIFF....AVI
+    if header[:4] == b'RIFF' and header[8:12] == b'AVI ':
+        return True
+
+    # MPEG-PS / MPEG-1/2
+    if header[:4] in (b'\x00\x00\x01\xba', b'\x00\x00\x01\xb3'):
+        return True
+
+    # MPEG-TS (sync byte 0x47 at start, and typically at offset 188)
+    if header[0:1] == b'\x47' and len(header) > 188 and header[188:189] == b'\x47':
+        return True
+
+    return False
+
 
 @router.post("/raw", response_model=UploadResponse)
 @limiter.limit(config.RATE_LIMIT_UPLOADS)
@@ -59,7 +103,12 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
                 raise HTTPException(status_code=413, detail=size_err)
             f.write(chunk)
 
-    # Validate video
+    # Quick magic byte check before expensive ffprobe validation
+    if not _check_video_magic(file_path):
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail="File does not appear to be a valid video (bad header)")
+
+    # Validate video with ffprobe
     validation = validate_video(file_path)
     if validation is not True:
         error_msg = validation.get("error", "Invalid video file") if isinstance(validation, dict) else "Invalid video file"
@@ -147,7 +196,12 @@ async def upload_reference(
                 raise HTTPException(status_code=413, detail=size_err)
             f.write(chunk)
 
-    # Validate video
+    # Quick magic byte check
+    if not _check_video_magic(file_path):
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail="File does not appear to be a valid video (bad header)")
+
+    # Validate video with ffprobe
     validation = validate_video(file_path)
     if validation is not True:
         error_msg = validation.get("error", "Invalid video file") if isinstance(validation, dict) else "Invalid video file"

@@ -6,8 +6,10 @@ import os
 import sys
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from typing import Optional
 
 from backend.config import config
@@ -17,6 +19,7 @@ from backend.services.storage import get_job_work_dir
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 logger = logging.getLogger(__name__)
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/ai-edit", tags=["ai-edit"])
 
@@ -189,7 +192,8 @@ async def get_suggestions():
 
 
 @router.get("/parse")
-async def parse_prompt_preview(prompt: str):
+@limiter.limit("30/minute")
+async def parse_prompt_preview(request: Request, prompt: str):
     """Preview what an edit plan would look like for a given prompt (dry run)."""
     from renderiq.prompt_parser import parse_prompt
     plan = parse_prompt(prompt)

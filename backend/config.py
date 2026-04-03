@@ -40,16 +40,21 @@ class Config:
 
     # Production settings
     ENV = os.environ.get("RENDERIQ_ENV", "development")
+    if ENV not in ("development", "production", "testing"):
+        raise ValueError(
+            f"Invalid RENDERIQ_ENV='{ENV}'. Must be 'development', 'production', or 'testing'."
+        )
     DEBUG = ENV != "production"
     ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY") or (
         secrets.token_hex(16) if ENV != "production" else ""
     )
     ALLOWED_ORIGINS = (
-        ["*"] if ENV != "production"
-        else [
+        [
             "https://renderiq.in",
             "https://www.renderiq.in",
         ]
+        if ENV == "production"
+        else ["*"]  # Dev/testing only — never deploy without RENDERIQ_ENV=production
     )
     RATE_LIMIT_UPLOADS = _get_rate_limit()
     FEEDBACK_FILE = os.path.join(ROOT_DIR, "feedback.json")
