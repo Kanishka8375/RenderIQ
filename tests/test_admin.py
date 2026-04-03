@@ -125,7 +125,7 @@ class TestAdminAPI:
 
     def test_feedback_submit(self, client):
         resp = client.post("/api/admin/feedback", json={
-            "job_id": "abcdef123456",
+            "job_id": "abcdef1234560000abcdef1234560000",
             "rating": "great",
             "comment": "",
         })
@@ -139,7 +139,7 @@ class TestAdminAPI:
     def test_feedback_get_with_key(self, client):
         # Submit one first
         client.post("/api/admin/feedback", json={
-            "job_id": "abcdef123456",
+            "job_id": "abcdef1234560000abcdef1234560000",
             "rating": "ok",
             "comment": "decent",
         })

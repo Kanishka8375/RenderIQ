@@ -3,9 +3,10 @@
 import os
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from backend.auth import verify_job_token
 from backend.config import config
 from backend.services.job_manager import job_manager
 
@@ -38,9 +39,10 @@ def _sanitize_filename(name: str) -> str:
 
 
 @router.get("/{job_id}/video")
-async def download_video(job_id: str):
+async def download_video(job_id: str, request: Request):
     """Serve the graded video file."""
     _validate_job_id(job_id)
+    verify_job_token(job_id, request)
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -63,9 +65,10 @@ async def download_video(job_id: str):
 
 
 @router.get("/{job_id}/lut")
-async def download_lut(job_id: str):
+async def download_lut(job_id: str, request: Request):
     """Serve the .cube LUT file."""
     _validate_job_id(job_id)
+    verify_job_token(job_id, request)
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -85,9 +88,10 @@ async def download_lut(job_id: str):
 
 
 @router.get("/{job_id}/preview")
-async def download_preview(job_id: str):
+async def download_preview(job_id: str, request: Request):
     """Serve a single graded frame as PNG."""
     _validate_job_id(job_id)
+    verify_job_token(job_id, request)
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -107,9 +111,10 @@ async def download_preview(job_id: str):
 
 
 @router.get("/{job_id}/comparison")
-async def download_comparison(job_id: str):
+async def download_comparison(job_id: str, request: Request):
     """Serve the before/after comparison image as PNG."""
     _validate_job_id(job_id)
+    verify_job_token(job_id, request)
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -129,9 +134,10 @@ async def download_comparison(job_id: str):
 
 
 @router.get("/{job_id}/srt")
-async def download_srt(job_id: str):
+async def download_srt(job_id: str, request: Request):
     """Serve the auto-generated SRT subtitles file."""
     _validate_job_id(job_id)
+    verify_job_token(job_id, request)
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -151,9 +157,10 @@ async def download_srt(job_id: str):
 
 
 @router.get("/{job_id}/thumbnail")
-async def download_thumbnail(job_id: str):
+async def download_thumbnail(job_id: str, request: Request):
     """Serve the auto-generated thumbnail."""
     _validate_job_id(job_id)
+    verify_job_token(job_id, request)
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

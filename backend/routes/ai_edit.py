@@ -12,6 +12,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from typing import Optional
 
+from backend.auth import verify_job_token
 from backend.config import config
 from backend.services.job_manager import job_manager
 from backend.services.storage import get_job_work_dir
@@ -133,10 +134,11 @@ def _run_ai_edit_job(job_id: str, prompt: str):
 # ─── Endpoints ───────────────────────────────────────────────────────────────
 
 @router.post("/start", response_model=AIEditResponse)
-async def start_ai_edit(request: AIEditRequest):
+async def start_ai_edit(request: AIEditRequest, raw_request: Request):
     """Start an AI edit job from a natural language prompt."""
     if not config.JOB_ID_PATTERN.match(request.job_id):
         raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(request.job_id, raw_request)
     job = job_manager.get_job(request.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

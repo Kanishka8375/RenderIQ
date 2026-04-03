@@ -5,11 +5,11 @@ import { api } from '../api/client';
 function useDownload() {
   const [downloading, setDownloading] = useState(null);
 
-  const download = async (url, filename) => {
+  const download = async (url, filename, headers = {}) => {
     setDownloading(filename);
     let blobUrl = null;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { headers });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       blobUrl = URL.createObjectURL(blob);
@@ -48,7 +48,8 @@ export default function DownloadPanel({ jobId, result, onReset, aiInfo }) {
             onClick={() =>
               download(
                 api.getDownloadUrl(jobId, 'video'),
-                `renderiq_graded_${jobId.slice(0, 8)}.mp4`
+                `renderiq_graded_${jobId.slice(0, 8)}.mp4`,
+                api.getDownloadHeaders(jobId)
               )
             }
             disabled={!!downloading}
@@ -67,7 +68,8 @@ export default function DownloadPanel({ jobId, result, onReset, aiInfo }) {
             onClick={() =>
               download(
                 api.getDownloadUrl(jobId, 'lut'),
-                'renderiq_grade.cube'
+                'renderiq_grade.cube',
+                api.getDownloadHeaders(jobId)
               )
             }
             disabled={!!downloading}
@@ -96,7 +98,8 @@ export default function DownloadPanel({ jobId, result, onReset, aiInfo }) {
               onClick={() =>
                 download(
                   api.getDownloadUrl(jobId, 'srt'),
-                  'renderiq_captions.srt'
+                  'renderiq_captions.srt',
+                  api.getDownloadHeaders(jobId)
                 )
               }
               disabled={!!downloading}
@@ -111,7 +114,8 @@ export default function DownloadPanel({ jobId, result, onReset, aiInfo }) {
               onClick={() =>
                 download(
                   api.getDownloadUrl(jobId, 'thumbnail'),
-                  'renderiq_thumbnail.jpg'
+                  'renderiq_thumbnail.jpg',
+                  api.getDownloadHeaders(jobId)
                 )
               }
               disabled={!!downloading}

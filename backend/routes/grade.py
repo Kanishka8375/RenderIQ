@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from backend.auth import verify_job_token
 from backend.config import config
 
 limiter = Limiter(key_func=get_remote_address)
@@ -298,10 +299,11 @@ def _run_smart_grade_job(job_id: str, request: GradeRequest):
 
 
 @router.post("/start", response_model=GradeStartResponse)
-async def start_grade(request: GradeRequest):
+async def start_grade(request: GradeRequest, raw_request: Request):
     """Start a grading job in the background."""
     if not config.JOB_ID_PATTERN.match(request.job_id):
         raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(request.job_id, raw_request)
     job = job_manager.get_job(request.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -336,7 +338,7 @@ async def start_grade(request: GradeRequest):
 
 
 @router.post("/regrade")
-async def regrade(request: GradeRequest):
+async def regrade(request: GradeRequest, raw_request: Request):
     """Re-grade an already-uploaded video with different settings.
 
     Reuses the existing raw footage — no re-upload needed.
@@ -344,6 +346,7 @@ async def regrade(request: GradeRequest):
     """
     if not config.JOB_ID_PATTERN.match(request.job_id):
         raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(request.job_id, raw_request)
     job = job_manager.get_job(request.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -400,6 +403,7 @@ async def get_status(request: Request, job_id: str):
     """Get current job status."""
     if not config.JOB_ID_PATTERN.match(job_id):
         raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(job_id, request)
     status = job_manager.get_status(job_id)
     if status is None:
         raise HTTPException(status_code=404, detail="Job not found")

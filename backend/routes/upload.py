@@ -1,12 +1,14 @@
 """File upload endpoints."""
 
 import os
+import secrets
 import uuid
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from backend.auth import verify_job_token
 from backend.config import config
 
 limiter = Limiter(key_func=get_remote_address)
@@ -84,8 +86,9 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
     if disk_err:
         raise HTTPException(status_code=507, detail=disk_err)
 
-    # Generate job ID and save file
-    job_id = uuid.uuid4().hex[:12]
+    # Generate job ID (128-bit) and access token
+    job_id = uuid.uuid4().hex  # 32 hex chars = 128-bit entropy
+    access_token = secrets.token_urlsafe(32)  # 256-bit per-job secret
     upload_dir = get_job_upload_dir(job_id)
     file_path = os.path.join(upload_dir, f"raw{ext}")
 
@@ -126,10 +129,11 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
             detail=f"Video too long ({info['duration']/60:.1f} min). Max is {config.MAX_VIDEO_DURATION_MINUTES} minutes.",
         )
 
-    # Create job
+    # Create job with access token
     job = job_manager.create_job(job_id)
     job_manager.update_job(
         job_id,
+        access_token=access_token,
         raw_path=file_path,
         raw_filename=file.filename or f"video{ext}",
         duration=info["duration"],
@@ -141,6 +145,7 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
 
     return UploadResponse(
         job_id=job_id,
+        access_token=access_token,
         filename=file.filename or f"video{ext}",
         duration=round(info["duration"], 1),
         resolution=f"{info['width']}x{info['height']}",
@@ -160,6 +165,7 @@ async def upload_reference(
     # Validate job_id format
     if not config.JOB_ID_PATTERN.match(job_id):
         raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(job_id, request)
 
     # Check disk space
     disk_err = validate_disk_space()

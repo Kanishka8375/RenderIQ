@@ -35,8 +35,8 @@ class Config:
     ALLOWED_VIDEO_FORMATS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
     CLEANUP_INTERVAL_SECONDS = 300  # Check for expired jobs every 5 minutes
 
-    # Job ID validation pattern (hex, 12 chars)
-    JOB_ID_PATTERN = re.compile(r"^[a-f0-9]{12}$")
+    # Job ID validation pattern (hex, 32 chars — 128-bit entropy)
+    JOB_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 
     # Production settings
     ENV = os.environ.get("RENDERIQ_ENV", "development")

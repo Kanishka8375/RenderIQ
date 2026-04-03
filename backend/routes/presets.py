@@ -6,7 +6,7 @@ import sys
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from backend.models.schemas import PresetsListResponse, PresetInfo
@@ -129,11 +129,12 @@ async def preset_preview(name: str):
 
 
 @router.get("/recommend/{job_id}")
-async def recommend_preset(job_id: str, top_n: int = 3):
+async def recommend_preset(job_id: str, request: Request, top_n: int = 3):
     """Analyze uploaded video and recommend best-fitting presets.
 
     Returns ranked list of preset recommendations with scores and reasons.
     """
+    from backend.auth import verify_job_token
     from backend.config import config
     from backend.services.job_manager import job_manager
     from renderiq.sampler import extract_keyframes
@@ -141,6 +142,7 @@ async def recommend_preset(job_id: str, top_n: int = 3):
 
     if not config.JOB_ID_PATTERN.match(job_id):
         raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(job_id, request)
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

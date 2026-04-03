@@ -24,6 +24,7 @@ _SERIALIZABLE_TYPES = (str, int, float, bool, type(None))
 @dataclass
 class JobInfo:
     job_id: str
+    access_token: str = ""  # Per-job secret; required for all operations
     status: str = "pending"  # pending, queued, processing, completed, failed
     progress: int = 0
     current_step: str = ""
