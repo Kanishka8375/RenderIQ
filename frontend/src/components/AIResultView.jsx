@@ -50,7 +50,7 @@ export default function AIResultView({ aiInfo }) {
         </div>
         <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
           <Clock size={12} />
-          {processingTime.toFixed(1)}s
+          {(processingTime ?? 0).toFixed(1)}s
         </div>
       </div>
 

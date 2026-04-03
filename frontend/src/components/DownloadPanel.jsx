@@ -7,20 +7,22 @@ function useDownload() {
 
   const download = async (url, filename) => {
     setDownloading(filename);
+    let blobUrl = null;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
+      blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = blobUrl;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
       a.remove();
     } catch (err) {
       console.error('Download error:', err);
     } finally {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
       setDownloading(null);
     }
   };

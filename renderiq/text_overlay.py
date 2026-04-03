@@ -133,7 +133,15 @@ def add_text_overlays(
 
 def _escape_drawtext(text: str) -> str:
     """Escape text for FFmpeg drawtext filter."""
-    return text.replace("'", "'\\''").replace(":", "\\:").replace("\\", "\\\\")
+    # Backslashes must be escaped first to avoid double-escaping
+    text = text.replace("\\", "\\\\")
+    text = text.replace("'", "'\\''")
+    text = text.replace(":", "\\:")
+    text = text.replace("[", "\\[")
+    text = text.replace("]", "\\]")
+    text = text.replace("%", "%%")
+    text = text.replace("\n", " ")
+    return text
 
 
 def _find_font(style: str = "bold") -> str:
