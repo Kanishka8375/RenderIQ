@@ -6,10 +6,13 @@ import os
 import sys
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from typing import Optional
 
+from backend.auth import verify_job_token
 from backend.config import config
 from backend.services.job_manager import job_manager
 from backend.services.storage import get_job_work_dir
@@ -17,6 +20,7 @@ from backend.services.storage import get_job_work_dir
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 logger = logging.getLogger(__name__)
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/ai-edit", tags=["ai-edit"])
 
@@ -120,20 +124,24 @@ def _run_ai_edit_job(job_id: str, prompt: str):
     except Exception as e:
         logger.exception("AI edit failed for job %s", job_id)
         end_time = time.time()
+        error_msg = str(e) if config.DEBUG else "Processing failed. Please try again."
         job_manager.update_job(
-            job_id, status="failed", error=str(e),
-            current_step=f"Error: {e}", end_time=end_time,
+            job_id, status="failed", error=error_msg,
+            current_step=error_msg, end_time=end_time,
         )
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
 
 @router.post("/start", response_model=AIEditResponse)
-async def start_ai_edit(request: AIEditRequest):
+async def start_ai_edit(request: AIEditRequest, raw_request: Request):
     """Start an AI edit job from a natural language prompt."""
+    if not config.JOB_ID_PATTERN.match(request.job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(request.job_id, raw_request)
     job = job_manager.get_job(request.job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     if not job.raw_path or not os.path.isfile(job.raw_path):
         raise HTTPException(status_code=400, detail="Raw footage not uploaded yet")
@@ -186,7 +194,8 @@ async def get_suggestions():
 
 
 @router.get("/parse")
-async def parse_prompt_preview(prompt: str):
+@limiter.limit("30/minute")
+async def parse_prompt_preview(request: Request, prompt: str):
     """Preview what an edit plan would look like for a given prompt (dry run)."""
     from renderiq.prompt_parser import parse_prompt
     plan = parse_prompt(prompt)

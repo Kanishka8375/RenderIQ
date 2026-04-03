@@ -1,5 +1,21 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Per-job token storage (in-memory; cleared on page reload)
+const jobTokens = {};
+
+function setJobToken(jobId, token) {
+  jobTokens[jobId] = token;
+}
+
+function getJobToken(jobId) {
+  return jobTokens[jobId] || '';
+}
+
+function authHeaders(jobId) {
+  const token = getJobToken(jobId);
+  return token ? { 'X-Job-Token': token } : {};
+}
+
 export const api = {
   uploadRaw: (file, onProgress) => {
     return new Promise((resolve, reject) => {
@@ -15,7 +31,12 @@ export const api = {
 
       xhr.addEventListener('load', () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText));
+          const data = JSON.parse(xhr.responseText);
+          // Store the per-job access token
+          if (data.job_id && data.access_token) {
+            setJobToken(data.job_id, data.access_token);
+          }
+          resolve(data);
         } else {
           try {
             const err = JSON.parse(xhr.responseText);
@@ -54,6 +75,9 @@ export const api = {
 
       xhr.addEventListener('error', () => reject(new Error('Network error')));
       xhr.open('POST', `${API_BASE}/api/upload/reference`);
+      // Set auth header for reference upload
+      const token = getJobToken(jobId);
+      if (token) xhr.setRequestHeader('X-Job-Token', token);
       xhr.send(formData);
     });
   },
@@ -68,7 +92,9 @@ export const api = {
     `${API_BASE}/api/presets/${encodeURIComponent(name)}/preview`,
 
   getRecommendations: (jobId) =>
-    fetch(`${API_BASE}/api/presets/recommend/${encodeURIComponent(jobId)}`).then((r) => {
+    fetch(`${API_BASE}/api/presets/recommend/${encodeURIComponent(jobId)}`, {
+      headers: authHeaders(jobId),
+    }).then((r) => {
       if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'Recommendation failed'); });
       return r.json();
     }),
@@ -76,7 +102,7 @@ export const api = {
   startGrade: (config) =>
     fetch(`${API_BASE}/api/grade/start`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(config.job_id) },
       body: JSON.stringify(config),
     }).then((r) => {
       if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'Grade failed'); });
@@ -86,7 +112,7 @@ export const api = {
   regrade: (config) =>
     fetch(`${API_BASE}/api/grade/regrade`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(config.job_id) },
       body: JSON.stringify(config),
     }).then((r) => {
       if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'Re-grade failed'); });
@@ -94,13 +120,17 @@ export const api = {
     }),
 
   getStatus: (jobId) =>
-    fetch(`${API_BASE}/api/grade/status/${encodeURIComponent(jobId)}`).then((r) => {
+    fetch(`${API_BASE}/api/grade/status/${encodeURIComponent(jobId)}`, {
+      headers: authHeaders(jobId),
+    }).then((r) => {
       if (!r.ok) throw new Error('Status check failed');
       return r.json();
     }),
 
   getDownloadUrl: (jobId, type) =>
     `${API_BASE}/api/download/${encodeURIComponent(jobId)}/${encodeURIComponent(type)}`,
+
+  getDownloadHeaders: (jobId) => authHeaders(jobId),
 
   submitFeedback: (jobId, rating, comment = '') =>
     fetch(`${API_BASE}/api/admin/feedback`, {
@@ -113,7 +143,7 @@ export const api = {
   startAIEdit: (jobId, prompt) =>
     fetch(`${API_BASE}/api/ai-edit/start`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(jobId) },
       body: JSON.stringify({ job_id: jobId, prompt }),
     }).then((r) => {
       if (!r.ok) return r.json().then((e) => { throw new Error(e.detail || 'AI edit failed'); });
@@ -131,4 +161,8 @@ export const api = {
       if (!r.ok) throw new Error('Parse failed');
       return r.json();
     }),
+
+  // Token management (for components that need direct access)
+  setJobToken,
+  getJobToken,
 };

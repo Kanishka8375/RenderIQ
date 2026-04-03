@@ -37,7 +37,7 @@ def test_video(tmp_path):
 
 @pytest.fixture
 def uploaded_job(client, test_video):
-    """Upload a video and return the job info."""
+    """Upload a video and return the job info (includes access_token)."""
     with open(test_video, "rb") as f:
         resp = client.post(
             "/api/upload/raw",
@@ -47,9 +47,14 @@ def uploaded_job(client, test_video):
     return resp.json()
 
 
+def _auth(uploaded):
+    """Return headers dict with X-Job-Token from an uploaded job response."""
+    return {"X-Job-Token": uploaded["access_token"]}
+
+
 class TestUploadEndpoints:
     def test_upload_raw_valid(self, client, test_video):
-        """POST /api/upload/raw with valid video returns 200 + job_id."""
+        """POST /api/upload/raw with valid video returns 200 + job_id + access_token."""
         with open(test_video, "rb") as f:
             resp = client.post(
                 "/api/upload/raw",
@@ -58,6 +63,8 @@ class TestUploadEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert "job_id" in data
+        assert "access_token" in data
+        assert len(data["job_id"]) == 32
         assert data["filename"] == "test.mp4"
         assert data["duration"] > 0
         assert data["fps"] > 0
@@ -98,6 +105,7 @@ class TestUploadEndpoints:
                 "/api/upload/reference",
                 data={"job_id": job_id},
                 files={"file": ("ref.mp4", f, "video/mp4")},
+                headers=_auth(uploaded_job),
             )
         assert resp.status_code == 200
         data = resp.json()
@@ -138,7 +146,7 @@ class TestGradeEndpoints:
             "preset_name": "cinematic_warm",
             "strength": 0.8,
             "output_format": "both",
-        })
+        }, headers=_auth(uploaded_job))
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] in ("processing", "queued")
@@ -152,23 +160,33 @@ class TestGradeEndpoints:
                 "/api/upload/reference",
                 data={"job_id": job_id},
                 files={"file": ("ref.mp4", f, "video/mp4")},
+                headers=_auth(uploaded_job),
             )
         resp = client.post("/api/grade/start", json={
             "job_id": job_id,
             "mode": "reference",
             "strength": 0.7,
             "output_format": "both",
-        })
+        }, headers=_auth(uploaded_job))
         assert resp.status_code == 200
 
     def test_start_grade_invalid_job(self, client):
-        """POST /api/grade/start with invalid job_id returns 404."""
+        """POST /api/grade/start with invalid job_id returns 400 (bad format)."""
         resp = client.post("/api/grade/start", json={
             "job_id": "nonexistent",
             "mode": "preset",
             "preset_name": "cinematic_warm",
         })
-        assert resp.status_code == 404
+        assert resp.status_code == 400
+
+    def test_start_grade_missing_token(self, client, uploaded_job):
+        """POST /api/grade/start without token returns 401."""
+        resp = client.post("/api/grade/start", json={
+            "job_id": uploaded_job["job_id"],
+            "mode": "preset",
+            "preset_name": "cinematic_warm",
+        })
+        assert resp.status_code == 401
 
     def test_status_valid_job(self, client, uploaded_job):
         """GET /api/grade/status with valid job_id returns 200."""
@@ -179,17 +197,17 @@ class TestGradeEndpoints:
             "mode": "preset",
             "preset_name": "vintage_film",
             "output_format": "lut",
-        })
-        resp = client.get(f"/api/grade/status/{job_id}")
+        }, headers=_auth(uploaded_job))
+        resp = client.get(f"/api/grade/status/{job_id}", headers=_auth(uploaded_job))
         assert resp.status_code == 200
         data = resp.json()
         assert "status" in data
         assert "progress" in data
 
     def test_status_invalid_job(self, client):
-        """GET /api/grade/status with invalid job_id returns 404."""
+        """GET /api/grade/status with invalid job_id returns 400 (bad format)."""
         resp = client.get("/api/grade/status/nonexistent")
-        assert resp.status_code == 404
+        assert resp.status_code == 400
 
 
 class TestDownloadEndpoints:
@@ -203,17 +221,17 @@ class TestDownloadEndpoints:
             "preset_name": "golden_hour",
             "strength": 0.5,
             "output_format": "both",
-        })
+        }, headers=_auth(uploaded_job))
         # Wait for completion (up to 120 seconds)
         for _ in range(60):
-            resp = client.get(f"/api/grade/status/{job_id}")
+            resp = client.get(f"/api/grade/status/{job_id}", headers=_auth(uploaded_job))
             data = resp.json()
             if data["status"] in ("completed", "failed"):
                 break
             time.sleep(2)
 
         if data["status"] == "completed":
-            resp = client.get(f"/api/download/{job_id}/video")
+            resp = client.get(f"/api/download/{job_id}/video", headers=_auth(uploaded_job))
             assert resp.status_code == 200
             assert len(resp.content) > 0
 
@@ -225,42 +243,48 @@ class TestDownloadEndpoints:
             "mode": "preset",
             "preset_name": "teal_orange",
             "output_format": "both",
-        })
+        }, headers=_auth(uploaded_job))
         for _ in range(60):
-            resp = client.get(f"/api/grade/status/{job_id}")
+            resp = client.get(f"/api/grade/status/{job_id}", headers=_auth(uploaded_job))
             data = resp.json()
             if data["status"] in ("completed", "failed"):
                 break
             time.sleep(2)
 
         if data["status"] == "completed":
-            resp = client.get(f"/api/download/{job_id}/lut")
+            resp = client.get(f"/api/download/{job_id}/lut", headers=_auth(uploaded_job))
             assert resp.status_code == 200
             content = resp.content.decode()
             assert "LUT_3D_SIZE" in content
+
+    def test_download_without_token(self, client, uploaded_job):
+        """GET /api/download/{id}/video without token returns 401."""
+        job_id = uploaded_job["job_id"]
+        resp = client.get(f"/api/download/{job_id}/video")
+        assert resp.status_code == 401
 
 
 class TestJobManager:
     def test_max_concurrent_jobs(self, client, test_video):
         """4th concurrent job should be queued."""
-        job_ids = []
+        jobs = []
         for i in range(4):
             with open(test_video, "rb") as f:
                 resp = client.post(
                     "/api/upload/raw",
                     files={"file": (f"test{i}.mp4", f, "video/mp4")},
                 )
-            job_ids.append(resp.json()["job_id"])
+            jobs.append(resp.json())
 
         # Start 4 jobs
         statuses = []
-        for jid in job_ids:
+        for j in jobs:
             resp = client.post("/api/grade/start", json={
-                "job_id": jid,
+                "job_id": j["job_id"],
                 "mode": "preset",
                 "preset_name": "moody_dark",
                 "output_format": "lut",
-            })
+            }, headers=_auth(j))
             statuses.append(resp.json()["status"])
 
         # At least one should be queued if max_concurrent is 3
@@ -271,11 +295,11 @@ class TestJobManager:
         """Jobs should be removable after expiry."""
         from backend.services.job_manager import JobManager
         mgr = JobManager()
-        job = mgr.create_job("test_cleanup")
+        job = mgr.create_job("a" * 32)
         job.status = "completed"
         job.created_at = time.time() - 7200  # 2 hours ago
         mgr.cleanup_expired()
-        assert mgr.get_job("test_cleanup") is None
+        assert mgr.get_job("a" * 32) is None
 
 
 class TestHealthEndpoint:

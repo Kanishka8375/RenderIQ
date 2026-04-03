@@ -113,9 +113,10 @@ def _scene_change_timestamps(
     video_path: str, threshold: float
 ) -> list[tuple[float, str]]:
     """Detect scene changes using FFmpeg's scene filter."""
+    threshold = max(0.0, min(1.0, float(threshold)))
     cmd = [
         "ffmpeg", "-i", video_path,
-        "-vf", f"select='gt(scene,{threshold})',showinfo",
+        "-vf", f"select='gt(scene,{threshold:.4f})',showinfo",
         "-vsync", "vfr",
         "-f", "null", "-"
     ]

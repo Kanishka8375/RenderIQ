@@ -85,9 +85,11 @@ def detect_scenes(
 
 def _detect_cuts_ffmpeg(video_path: str, threshold: float) -> List[float]:
     """Use FFmpeg select filter to find scene changes."""
+    # Validate threshold is a safe float to prevent FFmpeg filter injection
+    threshold = max(0.0, min(1.0, float(threshold)))
     cmd = [
         "ffmpeg", "-i", video_path,
-        "-vf", f"select='gt(scene,{threshold})',showinfo",
+        "-vf", f"select='gt(scene,{threshold:.4f})',showinfo",
         "-f", "null", "-",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)

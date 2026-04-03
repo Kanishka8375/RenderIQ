@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class UploadResponse(BaseModel):
     job_id: str
+    access_token: str
     filename: str
     duration: float
     resolution: str

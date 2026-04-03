@@ -1,12 +1,14 @@
 """File upload endpoints."""
 
 import os
+import secrets
 import uuid
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from backend.auth import verify_job_token
 from backend.config import config
 
 limiter = Limiter(key_func=get_remote_address)
@@ -21,6 +23,50 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from renderiq.utils import get_video_info, validate_video, SUPPORTED_FORMATS
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
+
+# Known video container magic bytes / signatures
+_VIDEO_SIGNATURES = [
+    (b'\x00\x00\x00', 3, b'ftyp'),    # MP4/MOV (offset 4)
+    (b'\x1a\x45\xdf\xa3', 0, None),    # MKV/WebM (EBML)
+    (b'RIFF', 0, b'AVI '),              # AVI (RIFF....AVI )
+    (b'\x00\x00\x01\xba', 0, None),    # MPEG-PS
+    (b'\x00\x00\x01\xb3', 0, None),    # MPEG-1/2
+    (b'\x47', 0, None),                 # MPEG-TS (sync byte)
+]
+
+
+def _check_video_magic(file_path: str) -> bool:
+    """Fast check that file header looks like a video container."""
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(32)
+    except OSError:
+        return False
+
+    if len(header) < 12:
+        return False
+
+    # MP4/MOV: bytes 4-7 should be 'ftyp'
+    if header[4:8] == b'ftyp':
+        return True
+
+    # MKV/WebM: EBML header
+    if header[:4] == b'\x1a\x45\xdf\xa3':
+        return True
+
+    # AVI: RIFF....AVI
+    if header[:4] == b'RIFF' and header[8:12] == b'AVI ':
+        return True
+
+    # MPEG-PS / MPEG-1/2
+    if header[:4] in (b'\x00\x00\x01\xba', b'\x00\x00\x01\xb3'):
+        return True
+
+    # MPEG-TS (sync byte 0x47 at start, and typically at offset 188)
+    if header[0:1] == b'\x47' and len(header) > 188 and header[188:189] == b'\x47':
+        return True
+
+    return False
 
 
 @router.post("/raw", response_model=UploadResponse)
@@ -40,8 +86,9 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
     if disk_err:
         raise HTTPException(status_code=507, detail=disk_err)
 
-    # Generate job ID and save file
-    job_id = uuid.uuid4().hex[:12]
+    # Generate job ID (128-bit) and access token
+    job_id = uuid.uuid4().hex  # 32 hex chars = 128-bit entropy
+    access_token = secrets.token_urlsafe(32)  # 256-bit per-job secret
     upload_dir = get_job_upload_dir(job_id)
     file_path = os.path.join(upload_dir, f"raw{ext}")
 
@@ -59,7 +106,12 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
                 raise HTTPException(status_code=413, detail=size_err)
             f.write(chunk)
 
-    # Validate video
+    # Quick magic byte check before expensive ffprobe validation
+    if not _check_video_magic(file_path):
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail="File does not appear to be a valid video (bad header)")
+
+    # Validate video with ffprobe
     validation = validate_video(file_path)
     if validation is not True:
         error_msg = validation.get("error", "Invalid video file") if isinstance(validation, dict) else "Invalid video file"
@@ -77,10 +129,11 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
             detail=f"Video too long ({info['duration']/60:.1f} min). Max is {config.MAX_VIDEO_DURATION_MINUTES} minutes.",
         )
 
-    # Create job
+    # Create job with access token
     job = job_manager.create_job(job_id)
     job_manager.update_job(
         job_id,
+        access_token=access_token,
         raw_path=file_path,
         raw_filename=file.filename or f"video{ext}",
         duration=info["duration"],
@@ -92,6 +145,7 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
 
     return UploadResponse(
         job_id=job_id,
+        access_token=access_token,
         filename=file.filename or f"video{ext}",
         duration=round(info["duration"], 1),
         resolution=f"{info['width']}x{info['height']}",
@@ -101,7 +155,9 @@ async def upload_raw(request: Request, file: UploadFile = File(...)):
 
 
 @router.post("/reference", response_model=ReferenceUploadResponse)
+@limiter.limit(config.RATE_LIMIT_UPLOADS)
 async def upload_reference(
+    request: Request,
     job_id: str = Form(...),
     file: UploadFile = File(...),
 ):
@@ -109,6 +165,7 @@ async def upload_reference(
     # Validate job_id format
     if not config.JOB_ID_PATTERN.match(job_id):
         raise HTTPException(status_code=400, detail="Invalid job ID format")
+    verify_job_token(job_id, request)
 
     # Check disk space
     disk_err = validate_disk_space()
@@ -145,7 +202,12 @@ async def upload_reference(
                 raise HTTPException(status_code=413, detail=size_err)
             f.write(chunk)
 
-    # Validate video
+    # Quick magic byte check
+    if not _check_video_magic(file_path):
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail="File does not appear to be a valid video (bad header)")
+
+    # Validate video with ffprobe
     validation = validate_video(file_path)
     if validation is not True:
         error_msg = validation.get("error", "Invalid video file") if isinstance(validation, dict) else "Invalid video file"

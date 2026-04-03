@@ -60,6 +60,8 @@ def apply_speed_ramp(
         if 0.9 <= speed <= 1.1:
             speed = 1.0
 
+        # Clamp speed to safe range for FFmpeg filters
+        speed = max(0.25, min(4.0, float(speed)))
         scene["applied_speed"] = speed
 
         seg_path = os.path.join(temp_dir, f"seg_{i:04d}.mp4")
@@ -67,14 +69,14 @@ def apply_speed_ramp(
         start = scene["start_time"]
         duration = scene["duration"]
 
-        video_speed = f"setpts={1/speed}*PTS"
+        video_speed = f"setpts={1/speed:.4f}*PTS"
 
         if 0.5 < speed <= 2.0:
-            audio_speed = f"atempo={speed}"
+            audio_speed = f"atempo={speed:.4f}"
         elif speed <= 0.5:
-            audio_speed = f"atempo={speed*2},atempo=0.5"
+            audio_speed = f"atempo={speed*2:.4f},atempo=0.5"
         else:
-            audio_speed = f"atempo=2.0,atempo={speed/2}"
+            audio_speed = f"atempo=2.0,atempo={speed/2:.4f}"
 
         cmd = [
             "ffmpeg", "-y",

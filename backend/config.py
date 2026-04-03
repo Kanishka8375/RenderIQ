@@ -2,6 +2,7 @@
 
 import os
 import re
+import secrets
 import sys
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,19 +35,26 @@ class Config:
     ALLOWED_VIDEO_FORMATS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
     CLEANUP_INTERVAL_SECONDS = 300  # Check for expired jobs every 5 minutes
 
-    # Job ID validation pattern (hex, 12 chars)
-    JOB_ID_PATTERN = re.compile(r"^[a-f0-9]{12}$")
+    # Job ID validation pattern (hex, 32 chars — 128-bit entropy)
+    JOB_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
 
     # Production settings
     ENV = os.environ.get("RENDERIQ_ENV", "development")
+    if ENV not in ("development", "production", "testing"):
+        raise ValueError(
+            f"Invalid RENDERIQ_ENV='{ENV}'. Must be 'development', 'production', or 'testing'."
+        )
     DEBUG = ENV != "production"
-    ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY", "renderiq-dev-key" if ENV != "production" else "")
+    ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY") or (
+        secrets.token_hex(16) if ENV != "production" else ""
+    )
     ALLOWED_ORIGINS = (
-        ["*"] if ENV != "production"
-        else [
+        [
             "https://renderiq.in",
             "https://www.renderiq.in",
         ]
+        if ENV == "production"
+        else ["*"]  # Dev/testing only — never deploy without RENDERIQ_ENV=production
     )
     RATE_LIMIT_UPLOADS = _get_rate_limit()
     FEEDBACK_FILE = os.path.join(ROOT_DIR, "feedback.json")
