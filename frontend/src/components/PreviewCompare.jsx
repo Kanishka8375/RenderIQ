@@ -1,9 +1,33 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { api } from '../api/client';
 
-export default function PreviewCompare({ comparisonUrl }) {
+export default function PreviewCompare({ comparisonUrl, jobId }) {
   const [sliderPos, setSliderPos] = useState(50);
   const [dragging, setDragging] = useState(false);
+  const [imageSrc, setImageSrc] = useState(null);
   const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!comparisonUrl || !jobId) return;
+    let revoked = false;
+    const headers = api.getDownloadHeaders(jobId);
+    fetch(comparisonUrl, { headers })
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to load comparison');
+        return r.blob();
+      })
+      .then((blob) => {
+        if (revoked) return;
+        setImageSrc(URL.createObjectURL(blob));
+      })
+      .catch(() => {
+        if (!revoked) setImageSrc(comparisonUrl);
+      });
+    return () => {
+      revoked = true;
+      if (imageSrc) URL.revokeObjectURL(imageSrc);
+    };
+  }, [comparisonUrl, jobId]);
 
   const getPosition = useCallback((clientX) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -40,7 +64,7 @@ export default function PreviewCompare({ comparisonUrl }) {
     };
   }, [dragging, handleMove, handleEnd]);
 
-  if (!comparisonUrl) return null;
+  if (!comparisonUrl || !imageSrc) return null;
 
   return (
     <div className="space-y-3">
@@ -50,9 +74,8 @@ export default function PreviewCompare({ comparisonUrl }) {
         onMouseDown={(e) => handleStart(e.clientX)}
         onTouchStart={(e) => handleStart(e.touches[0].clientX)}
       >
-        {/* Full comparison image — we show it fully and use the slider as a visual overlay */}
         <img
-          src={comparisonUrl}
+          src={imageSrc}
           alt="Before and after comparison"
           className="w-full h-auto block"
           draggable={false}
@@ -63,7 +86,6 @@ export default function PreviewCompare({ comparisonUrl }) {
           className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg z-10"
           style={{ left: `${sliderPos}%` }}
         >
-          {/* Handle */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-lg flex items-center justify-center">
             <div className="flex gap-0.5">
               <div className="w-0.5 h-3 bg-gray-400 rounded-full" />
@@ -72,7 +94,6 @@ export default function PreviewCompare({ comparisonUrl }) {
           </div>
         </div>
 
-        {/* Labels */}
         <span className="absolute bottom-3 left-3 text-xs font-semibold bg-black/60 px-2 py-1 rounded-md backdrop-blur-sm">
           BEFORE
         </span>

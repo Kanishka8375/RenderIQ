@@ -30,6 +30,7 @@ export default function Home() {
   const [feedbackDismissed, setFeedbackDismissed] = useState(false);
   const [hasGraded, setHasGraded] = useState(false);
   const [editMode, setEditMode] = useState('preset'); // 'preset' or 'ai'
+  const [gradeError, setGradeError] = useState(null);
   const upload = useUpload();
   const job = useJob(jobId);
   const toolRef = useRef(null);
@@ -54,6 +55,7 @@ export default function Home() {
   }, [upload]);
 
   const handleStartGrade = useCallback(async (config) => {
+    setGradeError(null);
     try {
       await api.startGrade(config);
       setStep(3);
@@ -61,22 +63,24 @@ export default function Home() {
       setEditMode('preset');
       job.startPolling();
     } catch (err) {
-      // Handle inline
+      setGradeError(err.message);
     }
   }, [job]);
 
   const handleRegrade = useCallback(async (config) => {
+    setGradeError(null);
     try {
       await api.regrade({ ...config, job_id: jobId });
       setStep(3);
       setEditMode('preset');
       job.startPolling();
     } catch (err) {
-      // Handle inline
+      setGradeError(err.message);
     }
   }, [job, jobId]);
 
   const handleAIEdit = useCallback(async (prompt) => {
+    setGradeError(null);
     try {
       await api.startAIEdit(jobId, prompt);
       setStep(3);
@@ -84,7 +88,7 @@ export default function Home() {
       setEditMode('ai');
       job.startPolling();
     } catch (err) {
-      // Handle inline
+      setGradeError(err.message);
     }
   }, [job, jobId]);
 
@@ -101,6 +105,7 @@ export default function Home() {
     setFeedbackDismissed(false);
     setHasGraded(false);
     setEditMode('preset');
+    setGradeError(null);
   }, [upload, job]);
 
   const isProcessing = step === 3 && job.status === 'processing';
@@ -233,6 +238,12 @@ export default function Home() {
                         Preset Grade
                       </button>
                     </div>
+
+                    {gradeError && (
+                      <div className="mb-4 p-3 rounded-xl bg-[var(--color-error)]/10 border border-[var(--color-error)]/30 text-sm text-[var(--color-error)]">
+                        {gradeError}
+                      </div>
+                    )}
 
                     {editMode === 'ai' ? (
                       <div>
@@ -386,7 +397,7 @@ export default function Home() {
                             </div>
                           )}
 
-                          <PreviewCompare comparisonUrl={job.result?.comparison_url} />
+                          <PreviewCompare comparisonUrl={job.result?.comparison_url} jobId={jobId} />
                           <DownloadPanel
                             jobId={jobId}
                             result={job.result}

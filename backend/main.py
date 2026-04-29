@@ -131,7 +131,8 @@ app.add_middleware(
     allow_origins=config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-Job-Token"],
+    expose_headers=["X-Job-Token"],
 )
 
 # Routes

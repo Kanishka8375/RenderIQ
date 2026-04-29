@@ -39,7 +39,10 @@ def cleanup_job(job_id: str):
 
 def get_free_disk_space_mb() -> float:
     """Return free disk space in MB."""
-    stat = os.statvfs(config.UPLOAD_DIR)
+    path = config.UPLOAD_DIR
+    if not os.path.isdir(path):
+        os.makedirs(path, exist_ok=True)
+    stat = os.statvfs(path)
     return (stat.f_bavail * stat.f_frsize) / (1024 * 1024)
 
 
