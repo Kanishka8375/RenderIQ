@@ -53,7 +53,7 @@ class Config:
         [
             "https://renderiq.in",
             "https://www.renderiq.in",
-            "https://render-iq.vercel.app",
+            "https://render-iq-alyl.vercel.app",
             os.environ.get("VERCEL_URL", ""),
             os.environ.get("VERCEL_BRANCH_URL", ""),
         ]
