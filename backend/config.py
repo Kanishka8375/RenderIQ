@@ -49,18 +49,7 @@ class Config:
     ADMIN_API_KEY = os.environ.get("RENDERIQ_ADMIN_KEY") or (
         secrets.token_hex(16) if ENV != "production" else ""
     )
-    ALLOWED_ORIGINS = (
-        [
-            "https://renderiq.in",
-            "https://www.renderiq.in",
-            "https://render-iq-alyl.vercel.app",
-            os.environ.get("VERCEL_URL", ""),
-            os.environ.get("VERCEL_BRANCH_URL", ""),
-        ]
-        if ENV == "production"
-        else ["*"]
-    )
-    ALLOWED_ORIGINS = [o for o in ALLOWED_ORIGINS if o]
+    ALLOWED_ORIGINS = ["*"]
     RATE_LIMIT_UPLOADS = _get_rate_limit()
     FEEDBACK_FILE = os.path.join(_DATA_DIR, "feedback.json")
     ANALYTICS_FILE = os.path.join(_DATA_DIR, "analytics.json")
